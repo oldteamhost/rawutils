@@ -1,7 +1,7 @@
 # rawutils
 is still in the works.
 
-# Compile
+## Compile
 ```
 git clone --depth=1 https://github.com/oldteamhost/rawutils.git
 cd rawutils
