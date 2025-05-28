@@ -201,11 +201,12 @@ void intfget(intf_t *i, const char *ifname)
 
 void intfget_any(intf_t *i)
 {
-	struct if_nameindex *ifni,*start;
+	struct if_nameindex *ifni=NULL,*start=NULL;
 	u_char foundflag;
 
 	if (!(ifni=if_nameindex()))
 		 err(1,"failed get list interfaces");
+
 	start=ifni;
 	foundflag=0;
 

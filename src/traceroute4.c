@@ -34,33 +34,36 @@ u_char			Iflag=0;
 intf_t			i={0};
 int			mttl=30,ttl=1;	/* max ttl and ttl */
 u_int			soptip=0;
+u_char			*buffer=NULL;	/* for recv() */
+u_char			printstats=0;	/* print last stats ? */
+u_int			curtarget=0;	/* last target (current) */
+long long		wait=150*1000000LL;	/* timeout 150 ms */
+long long		interval=0;	/* delay */
 u_char			sflag=0;
+struct timeval		tstamp_s,tstamp_e;	/* for rtt */
 u_char			Sflag=0;
 u_char			Soptmac[6];
 char			*data=NULL;	/* payload */
 size_t			datalen=0;
 u_char			oflag=0;
+size_t			nreceived=0,ntransmitted=0;
+long long		tsum=0,tmin=LLONG_MAX,tmax=LLONG_MIN;
+size_t			try=3;	/* count try */
 u_char			oopt=0;
+int			method=IPPROTO_ICMP;	/* method traceroute */
+u_char			all=0;	/* all methods */
+u_char			reached=0;	/* aee */
 int			off=0;
+u_char			reply_state=0;	/* last recv status */
 int			fd=-1;
+int			hop=0;	/* current hop */
 u_char			Pflag=0;
+u_short			lastipid=0;	/* for filter */
 u_short			Popt=0;
 u_char			pflag=0;
+u_int			source=0;	/* check traceroutecallback() */
 u_short			popt=0;
-
-static inline noreturn void finish(int sig)
-{
-	gettimeofday(&_et,NULL);
-	endmsg(&_st,&_et);
-
-	if (fd>=0)	/* socket */
-		close(fd);
-	if (data)
-		free(data);
-	if (targets)
-		cvector_free(targets);	/* targets */
-	exit(sig);
-}
+long long		*rtts=NULL;	/* times free() */
 
 static inline u_char *tracerouteframe(u_int *outlen, u_int target,
 	 int proto, u_char *_data, u_int _datalen)
@@ -92,6 +95,9 @@ static inline u_char *tracerouteframe(u_int *outlen, u_int target,
 	if (!(frame=calloc(1,*outlen)))
 		errx(1,"failed allocated frame (%ld len)",*outlen);
 
+	lastipid=random_u16();
+	hop=ttl;
+
 	memcpy(frame,i.dstmac,6);				/* dst mac */
 	memcpy(frame+6,i.srcmac,6);				/* src mac */
 	*(u_short*)(void*)(frame+12)=htons(0x0800);		/*ippayload*/
@@ -100,9 +106,9 @@ static inline u_char *tracerouteframe(u_int *outlen, u_int target,
 	frame[15]=(oflag)?oopt:0;				/* tos */
 	*(u_short*)(void*)(frame+16)=htons((u_short)		/* tot_len +optslen */
 		(*outlen-14));
-	*(u_short*)(void*)(frame+18)=htons(random_u16());	/* id */
+	*(u_short*)(void*)(frame+18)=htons(lastipid);		/* id */
 	*(u_short*)(void*)(frame+20)=htons((u_short)off);	/* off */
-	frame[22]=(u_char)randnum(121,255);			/* ttl */
+	frame[22]=(u_char)ttl;					/* ttl */
 	frame[23]=(u_char)proto;				/* proto */
 	*(u_short*)(void*)(frame+24)=0;				/* chksum */
 	for(n=0;n<4;n++)					/* src+dst */
@@ -126,6 +132,7 @@ static inline u_char *tracerouteframe(u_int *outlen, u_int target,
 		case IPPROTO_TCP:
 			*(u_short*)(void*)(frame+34)=(Pflag)?htons(Popt):htons(random_u16());	/* src port */
 			*(u_short*)(void*)(frame+36)=(pflag)?htons(popt):htons(80);		/* dst port */
+			/* UB */
 			memcpy(frame+38,&(u_int){htonl(random_u32())},sizeof(u_int));		/* seq */
 			memcpy(frame+42,&(u_int){htonl(0)},sizeof(u_int));			/* ack */
 			frame[46]=(5<<4)|(0&0x0f);						/* off | res */
@@ -181,6 +188,55 @@ static inline u_char *tracerouteframe(u_int *outlen, u_int target,
 	return frame;
 }
 
+static inline void stats(u_int target)
+{
+	char t1[1000],t2[1000],t3[1000];
+	struct in_addr in;
+	
+	in.s_addr=target;
+	printf("\n----%s TRACEROUTE Statistics----\n",inet_ntoa(in));
+	printf("%ld packets transmitted, %ld packets received",
+		ntransmitted,nreceived);
+	if (nreceived>ntransmitted)
+		printf(" -- somebody's printing up packets!\n");
+	else
+		printf(", %ld%% packet loss\n",(size_t)
+			(((ntransmitted-nreceived)*100)/ntransmitted));
+	if (nreceived)
+		printf("round-trip (rtt) min/avg/max = %s/%s/%s\n",
+			timefmt(tmin,t1,sizeof(t1)),
+			timefmt((long long)tsum/(long long)nreceived,t2,sizeof(t2)),
+			timefmt(tmax,t3,sizeof(t3)));
+	printf("target %s %s %d hops\n",inet_ntoa(in),
+    		(reached)?"was reached in":"has been missed for",hop);
+	putchar(0x0a);
+}
+
+static inline noreturn void finish(int sig)
+{
+	(void)sig;
+	
+	if (!printstats)
+		stats(curtarget);
+	gettimeofday(&_et,NULL);
+	endmsg(&_st,&_et);
+
+	if (fd>=0)	/* socket */
+		close(fd);
+	if (rtts)	/* times */
+		free(rtts);
+	if (buffer)
+		free(buffer);
+	if (data)
+		free(data);
+	if (targets)
+		cvector_free(targets);	/* targets */
+	if (nreceived)
+		exit(0);
+	else
+		exit(1);
+}
+
 static inline void getopts(int argc, char **argv)
 {
 	struct ether_addr	*tmp;
@@ -196,27 +252,61 @@ usage:
 		printf("  %s [flags] <target target1 ...,>\n\n",argv[0]);
 		puts("  -I <device>  set your interface and his info");
 		puts("  -s <source>  set source custom IP address");
+		puts("  -n <count>   set your num of try");
 		puts("  -S <source>  set source custom MAC address");
-		puts("  -o <tos>     set your Type Of Service");
+		puts("  -o <tos>     set your num in field Type Of Service");
 		puts("  -P <port>    set source (your) port");
 		puts("  -m <ttl>     set max ttl (num hops)");
+		puts("  -i <time>    set interval between packets, ex: see down");
+		puts("  -w <time>    set wait time or timeout, ex: 10s or 10ms");
 		puts("  -f <ttl>     set first ttl (start hop)");
 		puts("  -p <port>    set destination port");
 		puts("  -H <hex>     set payload in hex numbers");
 		puts("  -a <ascii>   set payload in ascii");
 		puts("  -l <length>  set payload in ascii");
-
 		putchar(0x0a);
+		puts("  -A  use all methods and protos");
+		puts("  -E  use only icmp4 echo packets");
+		puts("  -Y  use only tcp syn packets");
+		puts("  -U  use only udp packets");
+		puts("  -L  use only udp-lite packets");
+		puts("  -C  use only sctp-cookie packets");
 		puts("  -r  set Reserved Fragment flag");
 		puts("  -d  set Dont't Fragment flag");
 		puts("  -4  set More Fragment flag");
 		puts("  -h  show this help message and exit");
 		puts("\nExamples");
+		printf("  %s google.com -A\n",argv[0]);
+		printf("  %s 5.255.255.77 -n 10 -w 50ms\n",argv[0]);
+		printf("  %s github.com 5.255.255.77 -n 10 -A\n",argv[0]);
 		exit(0);
 	}
 
-	while ((opt=getopt(argc,argv,"hI:s:S:o:P:p:H:a:l:dr4m:f:"))!=-1) {
+	while ((opt=getopt(argc,argv,"hI:s:S:o:P:p:H:a:l:dr4m:f:n:w:AEYULCi:"))!=-1) {
 		switch (opt) {
+			case 'A':
+				all=1;
+				break;
+			case 'i':
+				if ((interval=delayconv(optarg))==-1)
+					errx(1,"failed convert %s time",
+						optarg);
+				break;
+			case 'E':
+				method=IPPROTO_ICMP;
+				break;
+			case 'Y':
+				method=IPPROTO_TCP;
+				break;
+			case 'U':
+				method=IPPROTO_UDP;
+				break;
+			case 'L':
+				method=IPPROTO_UDPLITE;
+				break;
+			case 'C':
+				method=IPPROTO_SCTP;
+				break;
 			case 'I':
 				++Iflag;
 				intfget(&i,optarg);
@@ -233,11 +323,20 @@ usage:
 			case 'd':
 				off|=0x4000;
 				break;
+			case 'w':
+				if ((wait=delayconv(optarg))==-1)
+					errx(1,"failed convert %s time",
+						optarg);
+				break;
 			case 'r':
 				off|=0x8000;
 				break;
 			case '4':
 				off|=0x2000;
+				break;
+			case 'n':
+				str_to_size_t(optarg,&numtmp,1,UINT_MAX);
+				try=numtmp;
 				break;
 			case 's':
 				if ((soptip=inet_addr(optarg))==INADDR_NONE)
@@ -308,12 +407,101 @@ usage:
 	}
 }
 
+static inline u_char traceroutecallback(u_char *frame, size_t frmlen, void *arg)
+{
+	/* arg is target */
+	u_int *target=(u_int*)arg;
+	u_int tmp=0;
+
+	if (frmlen<42)	/* eth + ip + icmp */
+		return 0;
+
+	/* only ip frames */
+	if (ntohs(*(u_short*)(void*)(frame+12))!=0x0800)
+		return 0;
+	/* check ip src in first ip header */
+	memcpy(&tmp,(frame+26),sizeof(tmp));
+	if (tmp==*target) {
+		memcpy(&source,(frame+26),4);
+		/* reached */
+		reached=1;
+		return (reply_state=1);
+	}
+	if (frame[23]!=IPPROTO_ICMP)	/* only icmp packets */
+		return 0;
+	if (frame[34]!=11)	/* time exceed */
+		return 0;
+	if (memcmp((frame+30),i.srcip4,4)!=0)	/* ip dst */
+		return 0;
+	memcpy(&source,(frame+26),4);
+
+	/* check ipid in second ip header */
+	if (ntohs((*(u_short*)(void*)(frame+42+4)))!=lastipid)
+		return 0;
+
+	/* aee */
+	reply_state=1;
+	return 1;
+}
+
+const char *resolve_dns(u_int ipv4)
+{
+	static char res[2048+2];
+	struct sockaddr_in sa;
+	char dnsbuf[2048];
+
+	memset(dnsbuf,0,sizeof(dnsbuf));
+	memset(&sa,0,sizeof(sa));
+
+	sa.sin_family=AF_INET;
+	sa.sin_addr.s_addr=ipv4;
+
+	if (getnameinfo((struct sockaddr*)&sa,
+			 sizeof(sa),dnsbuf,sizeof(dnsbuf),
+			NULL,0,0)==0) {
+		snprintf(res,sizeof(res),"(%s)",dnsbuf);
+		return res;
+	}
+
+	return "(\?\?\?)";
+}
+
+static inline long long tvrtt(struct timeval *s, struct timeval *e)
+{
+	long long sec,usec,rtt;
+
+	sec=e->tv_sec-s->tv_sec;
+	usec=e->tv_usec-s->tv_usec;
+
+	/* fix time */
+	if (usec<0) {
+		sec-=1;
+		usec+=1000000;
+	}
+
+	rtt=(long long)sec*1000000000LL+
+		(long long)usec*1000LL;
+
+	tsum+=rtt;	/* update stats */
+	tmax=(rtt>tmax)?rtt:tmax;
+	tmin=(rtt<tmin)?rtt:tmin;
+
+	return rtt;
+}
+
 int main(int argc, char **argv)
 {
 	struct sockaddr_ll	sll={0};
 	u_char			*frame=NULL;
 	u_int			len=0;
-	cvector_iterator(u_int)	it;
+	cvector_iterator(u_int)	it=NULL;
+	size_t			hopid=1,j=0;
+	u_char			ok=0,p=0;
+	u_int			tmpip=0;
+	u_char			success=0;
+	char			time[1000];
+	int			tot=0,first=0;
+	struct in_addr		a={0};
 
 	random_set(0);	/* random init */
 	Srandom(random_seed_u64());
@@ -338,18 +526,101 @@ int main(int argc, char **argv)
 		errx(1,"failed create socket");
 	sll.sll_ifindex=i.index,sll.sll_family=AF_PACKET,sll.sll_protocol=ETH_P_ARP;
 	startmsg();
+	
+	rtts=calloc(try,sizeof(long long));
+	if (!rtts)
+		errx(1,"failed allocated time");
 
+	/* recv buffer */
+	if (!(buffer=calloc(1,65535)))
+		errx(1,"failed allocated buffer for recv()");
+
+	tot=mttl,first=ttl;
 	for (it=cvector_begin(targets);it!=cvector_end(targets);++it) {
-		if (!(frame=tracerouteframe(&len,*it,IPPROTO_UDPLITE,
-			(u_char*)data,(u_int)datalen)))	/* create frame */
-			errx(1,"failed create frame");
-		printf("%u\n",len);
-		if (sendto(fd,frame,len,0,(struct sockaddr*)&sll,sizeof(sll))<0)
-			err(1,"failed send()");
-		free(frame);
+
+		nreceived=0,ntransmitted=0;
+		tsum=0,tmin=LLONG_MAX,tmax=LLONG_MIN;
+		ttl=first,mttl=tot-(ttl-1);	/* fix time */
+		curtarget=*it,printstats=0;
+		reached=0,source=0;
+		lastipid=0,hop=0;
+
+		for (;mttl;mttl--) {
+			memset(rtts,0,(try*sizeof(long long)));
+			p=success=0;
+			printf("%d  ", ttl),fflush(stdout);
+			for (hopid=1,ok=0;hopid<=try;hopid++) {
+				nsdelay(interval);	/* delay ? */
+				if (!(frame=tracerouteframe(&len,*it,method,
+					(u_char*)data,(u_int)datalen)))	/* create frame */
+					errx(1,"failed create frame");
+				if (sendto(fd,frame,len,0,(struct sockaddr*)&sll,sizeof(sll))<0)
+					err(1,"failed send()");
+				++ntransmitted;	/* success send */
+				if (frame)
+					free(frame);
+
+				memset(&tstamp_s,0,sizeof(tstamp_s));
+				memset(&tstamp_e,0,sizeof(tstamp_e));
+
+				reply_state=0;
+				frmrecv(fd,&buffer,65535,(void*)it,
+					traceroutecallback,&tstamp_s,&tstamp_e,wait);
+				nreceived+=(size_t)reply_state;
+
+				/* process all */
+				if (!reply_state&&all) {
+					switch (method) {
+						/* reroutes */
+						case IPPROTO_ICMP:
+							method=IPPROTO_TCP;
+							break;
+						case IPPROTO_TCP:
+							method=IPPROTO_UDP;
+							break;
+						case IPPROTO_UDP:
+							method=IPPROTO_SCTP;
+							break;
+						case IPPROTO_SCTP:
+							method=IPPROTO_UDPLITE;
+							break;
+						case IPPROTO_UDPLITE:
+							method=IPPROTO_ICMP;
+							goto print;
+					}
+					hopid--;
+					continue;
+				}
+print:
+				if (reply_state) {
+					rtts[hopid-1]=tvrtt(&tstamp_s,&tstamp_e);
+					if (!p||source!=tmpip) {
+						a.s_addr=source;
+						printf("%s %s",inet_ntoa(a),resolve_dns(source));
+						p=1,tmpip=source;
+					}
+					if (!success)
+						success=reply_state;
+				}
+				else {
+					putchar('.');
+					fflush(stdout);
+				}
+			}
+			if (success) {
+				printf("    ");
+				for (j=1;j<=try;j++)
+					printf("%s ",timefmt(rtts[j-1],time,sizeof(time)));
+			}
+			putchar(0x0a);
+			if (reached)
+				break;
+			ttl++;
+		}
+		if (!printstats)
+			stats(*it),++printstats;
 	}
 
 	finish(0);
 	/* NOTREACHED */
 }
-

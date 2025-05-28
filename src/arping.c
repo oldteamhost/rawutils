@@ -597,9 +597,9 @@ int main(int argc, char **argv)
 			reply_state=0;
 			ret=frmrecv(fd,&buffer,65535,NULL,
 				arpcallback,&tstamp_s,&tstamp_e,wait);
+			nreceived+=(size_t)reply_state;
 
 			if (reply_state) {
-				++nreceived;	/* success recv */
 				tvrtt(&tstamp_s,&tstamp_e);	/* updates stats rtt */
 				if (!Dflag) {
 					if (eflag)
