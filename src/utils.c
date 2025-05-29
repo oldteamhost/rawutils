@@ -22,7 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "../../include/utils.h"
+#include "../include/utils.h"
 
 const char *timediff(struct timeval *s, struct timeval *e,
 		char *out, size_t outlen)

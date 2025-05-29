@@ -1,24 +1,24 @@
 CC=@CC@
 CFLAGS=@CFLAGS@
-LIB_OBJS=$(patsubst src/lib/%.c, src/lib/%.o, $(wildcard src/lib/*.c))
-PROGS=$(patsubst src/%.c, %, $(filter-out src/lib/%.c, $(wildcard src/*.c)))
+LIB_OBJS=$(patsubst src/%.c, src/%.o, $(wildcard src/*.c))
+PROGS=$(patsubst %.c, %, $(filter-out src/%.c, $(wildcard *.c)))
 
 all: $(PROGS)
 
-$(PROGS): %: src/%.c $(LIB_OBJS)
+$(PROGS): %: %.c $(LIB_OBJS)
 	@printf "CC\t%s\n" $<
 	@$(CC) $(CFLAGS) -c -o $@.o $<
 	@printf "LD\t%s\n" $@
 	@$(CC) $(CFLAGS) -o $@ $@.o $(LIB_OBJS)
 	@rm -f $@.o
 
-src/lib/%.o: src/lib/%.c
+src/%.o: src/%.c
 	@printf "CC\t%s\n" $<
 	@$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
 	@printf "CLEAN\t%s\n"
 	@rm -rf config.status configure~ config.h.in~ config.log autom4te.cache config.h
-	@rm -f $(PROGS) src/lib/*.o
+	@rm -f $(PROGS) src/*.o *.o
 	@rm -rf Makefile
 

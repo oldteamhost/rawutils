@@ -22,7 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "../../include/err.h"
+#include "../include/err.h"
 
 noreturn void err(int eval, const char *fmt, ...)
 {

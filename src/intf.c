@@ -22,7 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "../../include/intf.h"
+#include "../include/intf.h"
 
 static inline void __intf_base_get(intf_t *i, const char *ifname)
 {

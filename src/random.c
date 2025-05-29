@@ -22,7 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "../../include/random.h"
+#include "../include/random.h"
 
 void	(*SRANDOM)(u_long);
 u_long	(*RANDOM)(void);

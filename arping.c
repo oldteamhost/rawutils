@@ -22,10 +22,10 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "../include/include.h"
-#include "../include/intf.h"
-#include "../include/cvector.h"
-#include "../include/utils.h"
+#include "include/include.h"
+#include "include/intf.h"
+#include "include/cvector.h"
+#include "include/utils.h"
 
 cvector(u_int)		targets=NULL;	/* cvector_vector_type */
 struct timeval		_st,_et;	/* total time */

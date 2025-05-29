@@ -22,11 +22,11 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "../include/include.h"
-#include "../include/intf.h"
-#include "../include/cvector.h"
-#include "../include/random.h"
-#include "../include/utils.h"
+#include "include/include.h"
+#include "include/intf.h"
+#include "include/cvector.h"
+#include "include/random.h"
+#include "include/utils.h"
 
 cvector(u_int)		targets=NULL;	/* cvector_vector_type */
 struct timeval		_st,_et;	/* total time */
@@ -261,9 +261,9 @@ usage:
 		puts("  -w <time>    set wait time or timeout, ex: 10s or 10ms");
 		puts("  -f <ttl>     set first ttl (start hop)");
 		puts("  -p <port>    set destination port");
-		puts("  -H <hex>     set payload in hex numbers");
-		puts("  -a <ascii>   set payload in ascii");
-		puts("  -l <length>  set payload in ascii");
+		puts("  -H <hex>     set payload data in hex numbers");
+		puts("  -a <ascii>   set payload data in ascii");
+		puts("  -l <length>  set random payload data");
 		putchar(0x0a);
 		puts("  -A  use all methods and protos");
 		puts("  -E  use only icmp4 echo packets");
