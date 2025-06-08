@@ -82,7 +82,25 @@ usage:
 		puts("  -C <code>    set your icmp code (0)			ICMP");
 		puts("  -7 <ident>   set your icmp ident			ICMP");
 
+		/* ICMP TSTAMP */
+		puts("  -R <num>     set your originate tstamp		ICMP -T 13");
+		puts("  -x <num>     set your receive tstamp			ICMP -T 13");
+		puts("  -X <num>     set your transmit tstamp			ICMP -T 13");
+
+		/* ICMP MASK */
+		puts("  -M <num>     set your icmp mask			ICMP -T 17");
+
 		/* SCTP */
+		puts("  -Y <type>    set your chunk type			SCTP");
+		puts("  -V <vtag>    set your vtag				SCTP");
+
+		/* Chunk 1,2 */
+		puts("  -j <itag>    set your itag number			SCTP -Y 1/2");
+		puts("  -J <arwd>    set your arwd number			SCTP -Y 1/2");
+		puts("  -k <nos>     set your nos number			SCTP -Y 1/2");
+		puts("  -y <nis>     set your nis number			SCTP -Y 1/2");
+		puts("  -k <itsn>    set your itsn number			SCTP -Y 1/2");
+		/* Chunk 0 */
 
 		/* UDPLITE */
 		puts("  -g <crg>     set your crg check			UDPLITE");
@@ -116,5 +134,8 @@ int main(int argc, char **argv)
 	signal(SIGINT,finish);
 	gettimeofday(&_st,NULL);
 	getopts(argc,argv);
+	cidr4_str("192.168.1.100/32");
+	cidr4_str("192.168.1.100/31");
+	cidr4_str("192.168.1.100/0");
 	return 0;
 }

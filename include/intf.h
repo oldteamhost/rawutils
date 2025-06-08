@@ -26,6 +26,7 @@
 #define __RAW_U_INTF_H
 
 #include "include.h"
+#include "cvector.h"
 #include "err.h"
 
 typedef struct __intf_t
@@ -43,5 +44,25 @@ typedef struct __intf_t
 void	intfget(intf_t *i, const char *ifname);
 void	intfget_any(intf_t *i);
 int	intf_is_network_sendable(intf_t *i);
+
+typedef struct __cidr4_t
+{
+	u_int addr,mask,network,
+		broadcast,s,e;
+	size_t num;	/* num of cidr */
+} cidr4_t;
+
+cidr4_t *cidr4_str(const char *txt);
+/* return ipv4 in htonl() */
+u_int	cidr4_next(cidr4_t *c, size_t start);
+void	cidr4_free(cidr4_t *c);
+void	cidr4_free_callback(void *c);
+
+typedef struct __cidr_block_t
+{
+	cvector(cidr4_t*)	raw;
+	size_t cidr_cur;	/* current */
+	size_t cidr_cur_pos;	/* current position on cidr */
+} cidr_block_t;
 
 #endif

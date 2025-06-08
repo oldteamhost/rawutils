@@ -29,6 +29,7 @@
 #include "include/utils.h"
 
 cvector(u_int)		targets=NULL;	/* cvector_vector_type */
+cidr_block_t		block;		/* cidr targets */
 struct timeval		_st,_et;	/* total time */
 u_char			Iflag=0;
 intf_t			i={0};
@@ -231,10 +232,36 @@ static inline noreturn void finish(int sig)
 		free(data);
 	if (targets)
 		cvector_free(targets);	/* targets */
+	if (block.raw)
+		cvector_free(block.raw);	/* cidrs */
 	if (nreceived)
 		exit(0);
 	else
 		exit(1);
+}
+
+static inline int importcidr(void)
+{
+	u_int host;
+	size_t n;
+
+	/* cidr end */
+	if ((block.cidr_cur)>=cvector_size(block.raw))
+		return 0;	/* close */
+
+	for (n=0;n<30;n++) {	/* group 30 targets */
+		host=cidr4_next(block.raw[block.cidr_cur],
+			(n+block.cidr_cur_pos));
+		if (host==0) {	/* is last */
+			++block.cidr_cur;
+			block.cidr_cur_pos=0;
+			return 1;
+		}
+		cvector_push_back(targets,host);	/* add to targets */
+	}
+
+	block.cidr_cur_pos+=n;	/* save current pos in current cidr in block*/
+	return 1;
 }
 
 static inline void getopts(int argc, char **argv)
@@ -245,11 +272,12 @@ static inline void getopts(int argc, char **argv)
 	int			opt,n;
 	size_t			numtmp;
 	u_char			*hextmp;
+	cidr4_t			*cidr;
 
 	if (argc<=1) {
 usage:
 		puts("Usage");
-		printf("  %s [flags] <target target1 ...,>\n\n",argv[0]);
+		printf("  %s [flags] <ip dns cidr ...,>\n\n",argv[0]);
 		puts("  -I <device>  set your interface and his info");
 		puts("  -s <source>  set source custom IP address");
 		puts("  -n <count>   set your num of try");
@@ -395,7 +423,18 @@ usage:
 	n=argc-optind;
 	if (n<=0)
 		goto usage;
+
+	cvector_init(block.raw,sizeof(cidr4_t*),
+		cidr4_free_callback);
+	block.cidr_cur=0,block.cidr_cur_pos=0;
+
 	for (n=optind;n<argc;n++) {
+		if ((cidr=cidr4_str(argv[n]))) {
+			/* found cidr */
+			cvector_push_back(block.raw,cidr);
+			continue;
+		}
+
 		if (sscanf(argv[n],"%u.%u.%u.%u",&a,&b,&c,&d)!=4) {
 			/* ok, this dns or fucking error? */
 			if (!(ip=resolve_ipv4(argv[n])))
@@ -526,6 +565,7 @@ int main(int argc, char **argv)
 		errx(1,"failed create socket");
 	sll.sll_ifindex=i.index,sll.sll_family=AF_PACKET,sll.sll_protocol=ETH_P_ARP;
 	startmsg();
+	importcidr();
 	
 	rtts=calloc(try,sizeof(long long));
 	if (!rtts)
@@ -536,6 +576,7 @@ int main(int argc, char **argv)
 		errx(1,"failed allocated buffer for recv()");
 
 	tot=mttl,first=ttl;
+try:
 	for (it=cvector_begin(targets);it!=cvector_end(targets);++it) {
 
 		nreceived=0,ntransmitted=0;
@@ -620,6 +661,11 @@ print:
 		if (!printstats)
 			stats(*it),++printstats;
 	}
+
+	/* cidr ?? */
+	cvector_clear(targets);
+	if (importcidr()!=0)
+		goto try;
 
 	finish(0);
 	/* NOTREACHED */
