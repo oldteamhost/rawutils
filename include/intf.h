@@ -34,11 +34,14 @@ typedef struct __intf_t
 	u_char	srcmac[6];
 	u_char	dstmac[6];
 	u_char	srcip4[4];
+	u_char	srcip6[16];	/* ipv6 support */
 	u_char	gatewayip4[4];
 	char	name[IFNAMSIZ];
 	int	index;
 	int	mtu;
 	short	flags;
+	u_char	support4,	/* ipv4 */
+		support6;	/* ipv6 */
 } intf_t;
 
 void	intfget(intf_t *i, const char *ifname);

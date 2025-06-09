@@ -24,11 +24,41 @@
 
 #include "../include/intf.h"
 
+static inline int __intf_ipv6_src_get(intf_t *i, const char *ifname)
+{
+	u_int index,prefix_len,scope,flags;
+	char dev[256],addr[512],s[8][5];
+	FILE *f;
+
+	if (!(f=fopen("/proc/net/if_inet6","r"))) {
+		errx(1,"failed open /proc/net/if_inet6 for get srcip6"
+			" for %s interface",ifname);
+		return 0;
+	}
+	while (fscanf(f,"%04s%04s%04s%04s%04s%04s%04s%04s %02x %x %02x %02x %32s",
+			s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7],&index,
+			&prefix_len,&scope,&flags,dev)==13) {
+		if (scope!=0x00)	/* skip non global addr */
+			continue;
+		if (strcmp(ifname,dev)==0) {
+			memset(addr,0,sizeof(addr));
+			snprintf(addr,sizeof(addr),"%s:%s:%s:%s:%s:%s:%s:%s",
+				s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7]);
+			inet_pton(AF_INET6,addr,i->srcip6);
+			fclose(f);
+			return 1;
+		}
+	}
+
+	fclose(f);
+	return 0;
+}
+
 static inline void __intf_base_get(intf_t *i, const char *ifname)
 {
 	struct ifreq ifr;
-	u_int n;
 	int fd,n1;
+	u_int n;
 
 	assert(ifname);
 	assert(i);
@@ -53,10 +83,17 @@ static inline void __intf_base_get(intf_t *i, const char *ifname)
 	else
 		memcpy(i->srcmac,ifr.ifr_ifru.ifru_hwaddr.sa_data,6);
 
-	if (ioctl(fd,SIOCGIFADDR,&ifr)!=0)
-		err(1,"failed get srcip4 for %s interface",ifname);
-	else
+	/* get source address */
+	if (ioctl(fd,SIOCGIFADDR,&ifr)==0) {
 		memcpy(i->srcip4,(ifr.ifr_addr.sa_data+2),4);
+		++i->support4;
+	}
+	if (__intf_ipv6_src_get(i,ifname))
+		++i->support6;
+
+	if (!i->support6&&!i->support4)	/* ip4 and ip6 not found ! */
+		err(1,"failed get srcip4 and srcip6"
+			" for %s interface",ifname);
 
 	n=if_nametoindex(ifname);
 	if (!n)
@@ -89,7 +126,7 @@ static inline void __intf_gatewayip4_get(intf_t *i, const char *ifname)
 	while (fgets(line,sizeof(line),f)) {
 		if (sscanf(line,"%15s %lx %lx",dev,&dest,&gate)!=3)
 			continue;
-		if (dest==0) {	/* is way in internet */
+		if (dest==0) {	/* is way in internet 0.0.0.0 */
 			if (strcmp(ifname,dev)==0) {
 				gate=ntohl((u_int)gate);
 				i->gatewayip4[0]=((u_int)gate>>24)&0xff;
@@ -235,8 +272,8 @@ cidr4_t *cidr4_str(const char *txt)
 		return NULL;
 	assert(a>=0&&a<=255&&b>=0&&b<=255&&c>=0&&c<=255&&d>=0
 		&&d<=255&&mask>=0&&mask<=32);
+
 	assert((cidr=calloc(1,sizeof(cidr4_t))));
-	
 	cidr->addr=((((u_int)a<<24)|((u_int)b<<16)|((u_int)c<<8)|(u_int)d));	/* create addr  */
 	cidr->mask=((mask==0)?(u_int)mask:0xFFFFFFFF<<(32-mask));	/* mask convert */
 	cidr->network=cidr->addr&cidr->mask;	/* network (first) */

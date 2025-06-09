@@ -585,6 +585,8 @@ int main(int argc, char **argv)
 		intfget_any(&i);
 	else if (!intf_is_network_sendable(&i))
 		errx(1,"this interface doesn't fit");
+	if (!i.support4)
+		errx(1,"this interface not suppport ipv4");
 	if (_0flag)	/* src 0.0.0.0 */
 		memset(i.srcip4,0x00,4);
 	if (sflag)	/* src your*/

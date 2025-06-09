@@ -28,7 +28,51 @@
 #include "include/random.h"
 #include "include/utils.h"
 
-cvector(u_int)		targets=NULL;	/* cvector_vector_type */
+typedef struct __target {
+	int ver;
+	union {
+		u_char ip6[16];
+		u_int ip4;
+	};
+} target_t;
+
+static inline int t_equal(const target_t *a, const target_t *b)
+{
+	if (a->ver!=b->ver)
+		return 0;
+	if (a->ver==AF_INET)
+		return a->ip4==b->ip4;
+	else if (a->ver==AF_INET6)
+		return memcmp(a->ip6,b->ip6,sizeof(a->ip6))==0;
+	return 0;
+}
+
+static inline const char *t_str(const target_t *t)
+{
+	static char buf[INET6_ADDRSTRLEN];
+	struct in_addr addr4={0};
+	struct in6_addr addr6={0};
+
+	memset(buf,0,sizeof(buf));
+	switch (t->ver) {
+		case AF_INET:
+			addr4.s_addr=t->ip4;
+			if (!inet_ntop(AF_INET, &addr4, buf, sizeof(buf)))
+				return "??? ip4";
+			break;
+		case AF_INET6:
+			memcpy(&addr6, t->ip6, 16);
+			if (!inet_ntop(AF_INET6, &addr6, buf, sizeof(buf)))
+				return "??? ip6";
+			break;
+		default:
+			 return "Unknown IP version";
+	}
+
+	return buf;
+}
+
+cvector(target_t)	targets=NULL;	/* cvector_vector_type */
 cidr_block_t		block;		/* cidr targets */
 struct timeval		_st,_et;	/* total time */
 u_char			Iflag=0;
@@ -37,7 +81,7 @@ int			mttl=30,ttl=1;	/* max ttl and ttl */
 u_int			soptip=0;
 u_char			*buffer=NULL;	/* for recv() */
 u_char			printstats=0;	/* print last stats ? */
-u_int			curtarget=0;	/* last target (current) */
+target_t		*curtarget=NULL;	/* last target (current) */
 long long		wait=150*1000000LL;	/* timeout 150 ms */
 long long		interval=0;	/* delay */
 u_char			sflag=0;
@@ -62,20 +106,35 @@ u_char			Pflag=0;
 u_short			lastipid=0;	/* for filter */
 u_short			Popt=0;
 u_char			pflag=0;
-u_int			source=0;	/* check traceroutecallback() */
+target_t		source={0};	/* check traceroutecallback() */
 u_short			popt=0;
 long long		*rtts=NULL;	/* times free() */
+u_char			_6flag=0;
+u_char			_6opt[16];
 
-static inline u_char *tracerouteframe(u_int *outlen, u_int target,
+static inline u_char *tracerouteframe(int version, u_int *outlen, void *in_target,
 	 int proto, u_char *_data, u_int _datalen)
 {
-	u_char *frame;
-	int n;
+	target_t        *target=NULL;	/* target */
+	u_char		*frame;		/* result frame (packet) */
+	int		n,s;		/* counter */
 
 	assert(proto);
 	assert(outlen);
+	assert(in_target);
 
-	*outlen=0;
+	/* only ipv4 or ipv6 */
+	assert(version==AF_INET||version==AF_INET6);
+
+	*outlen=0,s=0;
+	if (version==AF_INET6) {
+		*outlen+=20;		/* ipv6 (40) */
+		if (proto==IPPROTO_ICMP)	/* fix proto */
+			proto=IPPROTO_ICMPV6;
+	}
+	*outlen+=14;			/* ethernet 2 */
+	*outlen+=20;			/* ipv4 */
+	s=(int)*outlen;
 	switch (proto) {
 		case IPPROTO_TCP:
 			*outlen+=20;
@@ -83,119 +142,196 @@ static inline u_char *tracerouteframe(u_int *outlen, u_int target,
 		case IPPROTO_SCTP:
 			*outlen+=16;	/* sctp + cookie chunk */
 			break;
-		case IPPROTO_ICMP:	/* icmp + echo msg*/
+		case IPPROTO_ICMP:	/* icmp + echo msg (valid for ipv6) */
+		case IPPROTO_ICMPV6:
 		case IPPROTO_UDPLITE:
 		case IPPROTO_UDP:
 			*outlen+=8;
 			break;
 	}
-	*outlen+=14;	/* ethernet 2 */
-	*outlen+=20;	/* ipv4 */
 	*outlen+=_datalen;
 
 	if (!(frame=calloc(1,*outlen)))
 		errx(1,"failed allocated frame (%ld len)",*outlen);
-
 	lastipid=random_u16();
+	target=(target_t*)in_target;
 	hop=ttl;
 
+	/* ETHERNET 2 */
 	memcpy(frame,i.dstmac,6);				/* dst mac */
 	memcpy(frame+6,i.srcmac,6);				/* src mac */
-	*(u_short*)(void*)(frame+12)=htons(0x0800);		/*ippayload*/
+	*(u_short*)(void*)(frame+12)=(version==AF_INET)?
+			htons(0x0800):htons(0x86DD);		/* ip4/ip6 payload */
 
-	frame[14]=(4<<4)|5/*5+(optslen/4)*/;			/* version|ihl */
-	frame[15]=(oflag)?oopt:0;				/* tos */
-	*(u_short*)(void*)(frame+16)=htons((u_short)		/* tot_len +optslen */
-		(*outlen-14));
-	*(u_short*)(void*)(frame+18)=htons(lastipid);		/* id */
-	*(u_short*)(void*)(frame+20)=htons((u_short)off);	/* off */
-	frame[22]=(u_char)ttl;					/* ttl */
-	frame[23]=(u_char)proto;				/* proto */
-	*(u_short*)(void*)(frame+24)=0;				/* chksum */
-	for(n=0;n<4;n++)					/* src+dst */
-		frame[26+n]=i.srcip4[n], /* via in caelum*/
-		frame[30+n]=(ntohl(target)>>(24-8*n))&0xff;
-	*(u_short*)(void*)(frame+24)=in_check((u_short*)(void*)(frame+14),20);
+	/* IP4 / IP6 */
+	switch (version) {
+		case AF_INET:
+			frame[14]=(4<<4)|5/*5+(optslen/4)*/;			/* version|ihl */
+			frame[15]=(oflag)?oopt:0;				/* tos */
+			*(u_short*)(void*)(frame+16)=htons((u_short)		/* tot_len +optslen */
+				(*outlen-14));
+			*(u_short*)(void*)(frame+18)=htons(lastipid);		/* id */
+			*(u_short*)(void*)(frame+20)=htons((u_short)off);	/* off */
+			frame[22]=(u_char)ttl;					/* ttl */
+			frame[23]=(u_char)proto;				/* proto */
+			*(u_short*)(void*)(frame+24)=0;				/* chksum */
+			for(n=0;n<4;n++)					/* src+dst */
+				frame[26+n]=i.srcip4[n], /* via in caelum*/
+					frame[30+n]=(ntohl(target->ip4)>>(24-8*n))&0xff;
+			*(u_short*)(void*)(frame+24)=in_check((u_short*)(void*)(frame+14),20);
+			break;
+		case AF_INET6:
+			frame[14]=((0x06<<4)|((((oflag)?oopt:0)&0xF0)>>4));			/* version|tc */
+			frame[15]=(u_char)(((((oflag)?oopt:0)&0x0F)<<4)|			/* flowlabel */
+					((lastipid&0xF0000)>>16));
+			frame[16]=((lastipid&0x0FF00)>>8),frame[17]=((lastipid&0x000FF));
+			*(u_short*)(void*)(frame+18)=htons((u_short)*outlen-(54));		/* payload length */
+			frame[20]=(u_char)proto;						/* nexthdr (protocol) */
+			frame[21]=(u_char)ttl;							/* hoplimit (ttl) */
+			for(n=0;n<16;n++)					/* src+dst */
+				frame[22+n]=i.srcip6[n],
+					frame[22+16+n]=target->ip6[n];
+			break;
+	}
 
-
+	/* PAYLOAD IP */
 	switch (proto) {
 		case IPPROTO_ICMP:
-			frame[34]=8;						/* type */
-			frame[35]=0;						/* code */
-			*(u_short*)(void*)(frame+36)=htons(0);			/* chksum */
-			*(u_short*)(void*)(frame+38)=htons(random_u16());	/* id */
-			*(u_short*)(void*)(frame+40)=htons(1);			/* seq */
+		case IPPROTO_ICMPV6:
+			frame[s]=(proto==IPPROTO_ICMPV6)?128:8;			/* type */
+			frame[s+1]=0;						/* code */
+			*(u_short*)(void*)(frame+s+2)=htons(0);			/* chksum */
+			*(u_short*)(void*)(frame+s+4)=htons(random_u16());	/* id */
+			*(u_short*)(void*)(frame+s+6)=htons(1);			/* seq */
+
 			if (_data&&_datalen)
-			    memcpy(frame+42,_data,_datalen);
-			*(u_short*)(void*)(frame+36)=in_check((u_short*)
-				(void*)(frame+34),(int)(8+_datalen));
+			    memcpy(frame+s+8,_data,_datalen);
+
+			switch (version) {
+				case AF_INET:
+					*(u_short*)(void*)(frame+s+2)=in_check((u_short*)
+						(void*)(frame+s),(int)(8+_datalen));
+					break;
+				case AF_INET6:
+					*(u_short*)(void*)(frame+s+2)=ip6_pseudocheck(i.srcip6,
+						target->ip6,IPPROTO_ICMPV6,(u_int)(8+_datalen),(frame+s));
+					break;
+			}
+
 			break;
 		case IPPROTO_TCP:
-			*(u_short*)(void*)(frame+34)=(Pflag)?htons(Popt):htons(random_u16());	/* src port */
-			*(u_short*)(void*)(frame+36)=(pflag)?htons(popt):htons(80);		/* dst port */
-			/* UB */
-			memcpy(frame+38,&(u_int){htonl(random_u32())},sizeof(u_int));		/* seq */
-			memcpy(frame+42,&(u_int){htonl(0)},sizeof(u_int));			/* ack */
-			frame[46]=(5<<4)|(0&0x0f);						/* off | res */
-			frame[47]=2;								/* flags */
-			*(u_short*)(void*)(frame+48)=htons(1024);				/* window */
-			*(u_short*)(void*)(frame+50)=0;						/* chksum */
-			*(u_short*)(void*)(frame+52)=0;						/* urp */
+			*(u_short*)(void*)(frame+s)=(Pflag)?htons(Popt):htons(random_u16());	/* src port */
+			*(u_short*)(void*)(frame+s+2)=(pflag)?htons(popt):htons(80);		/* dst port */
+			memcpy(frame+s+4,&(u_int){htonl(random_u32())},sizeof(u_int));		/* seq */
+			memcpy(frame+s+8,&(u_int){htonl(0)},sizeof(u_int));			/* ack */
+			frame[s+12]=(5<<4)|(0&0x0f);						/* off | res */
+			frame[s+13]=2;								/* flags */
+			*(u_short*)(void*)(frame+s+14)=htons(1024);				/* window */
+			*(u_short*)(void*)(frame+s+16)=0;					/* chksum */
+			*(u_short*)(void*)(frame+s+18)=0;					/* urp */
+
 			if(_data&&_datalen)
-				memcpy(frame+54,_data,_datalen);
-			*(u_short*)(void*)(frame+50)=ip4_pseudocheck(
-				htonl((u_int)(((u_int)i.srcip4[0]<<24)|((u_int)i.srcip4[1]<<16)|
-				((u_int)i.srcip4[2]<<8)|(u_int)i.srcip4[3])),target,IPPROTO_TCP,
-				(20+(u_short)_datalen),(frame+34));
+				memcpy(frame+s+20,_data,_datalen);
+
+			switch (version) {
+				case AF_INET:
+					*(u_short*)(void*)(frame+s+16)=ip4_pseudocheck(
+						htonl((u_int)(((u_int)i.srcip4[0]<<24)|((u_int)i.srcip4[1]<<16)|
+						((u_int)i.srcip4[2]<<8)|(u_int)i.srcip4[3])),target->ip4,(u_char)proto,
+						(20+(u_short)_datalen),(frame+s));
+					break;
+				case AF_INET6:
+					*(u_short*)(void*)(frame+s+16)=ip6_pseudocheck(i.srcip6,
+						target->ip6,(u_char)proto,(u_int)(20+_datalen),(frame+s));
+					break;
+			}
+
 			break;
 		case IPPROTO_SCTP:
-			*(u_short*)(void*)(frame+34)=(Pflag)?htons(Popt):htons(random_u16());	/* src port */
-			*(u_short*)(void*)(frame+36)=(pflag)?htons(popt):htons(80);		/* dst port */
-			*(u_int*)(void*)(frame+38)=htonl(random_u32());				/* vtag */
-			*(u_int*)(void*)(frame+42)=htonl(0);					/* chksum */
-			frame[46]=0x0a;								/* type */
-			frame[47]=0;								/* flags */
-			*(u_short*)(void*)(frame+48)=htons(4+(u_short)_datalen);		/* len */
+			*(u_short*)(void*)(frame+s)=(Pflag)?htons(Popt):htons(random_u16());	/* src port */
+			*(u_short*)(void*)(frame+s+2)=(pflag)?htons(popt):htons(80);		/* dst port */
+			*(u_int*)(void*)(frame+s+4)=htonl(random_u32());			/* vtag */
+			*(u_int*)(void*)(frame+s+8)=htonl(0);					/* chksum */
+			frame[s+12]=0x0a;							/* type */
+			frame[s+13]=0;								/* flags */
+			*(u_short*)(void*)(frame+s+14)=htons(4+(u_short)_datalen);		/* len */
+
 			if(_data&&_datalen)
-				memcpy(frame+50,_data,_datalen);
-			*(u_int*)(void*)(frame+42)=htonl(adler32(1,(frame+34),16+_datalen));	/* final chksum */
+				memcpy(frame+s+16,_data,_datalen);
+
+			*(u_int*)(void*)(frame+s+8)=htonl(adler32(1,(frame+s)			/* final chksum */
+					,16+_datalen));
 			break;
 		case IPPROTO_UDP:
-			*(u_short*)(void*)(frame+34)=(Pflag)?htons(Popt):htons(random_u16());	/* src port */
-			*(u_short*)(void*)(frame+36)=(pflag)?htons(popt):htons(80);		/* dst port */
-			*(u_short*)(void*)(frame+38)=htons(8+(u_short)_datalen);		/* len */
-			*(u_short*)(void*)(frame+40)=htons(0);					/* chksum */
+			*(u_short*)(void*)(frame+s)=(Pflag)?htons(Popt):htons(random_u16());	/* src port */
+			*(u_short*)(void*)(frame+s+2)=(pflag)?htons(popt):htons(80);		/* dst port */
+			*(u_short*)(void*)(frame+s+4)=htons(8+(u_short)_datalen);		/* len */
+			*(u_short*)(void*)(frame+s+6)=htons(0);					/* chksum */
+
 			if(_data&&_datalen)
-				memcpy(frame+42,_data,_datalen);
-			*(u_short*)(void*)(frame+40)=ip4_pseudocheck(
-				htonl((u_int)(((u_int)i.srcip4[0]<<24)|((u_int)i.srcip4[1]<<16)|
-				((u_int)i.srcip4[2]<<8)|(u_int)i.srcip4[3])),target,IPPROTO_UDP,
-				(8+(u_short)_datalen),(frame+34));
+				memcpy(frame+s+8,_data,_datalen);
+
+			switch (version) {
+				case AF_INET:
+					*(u_short*)(void*)(frame+s+6)=ip4_pseudocheck(
+						htonl((u_int)(((u_int)i.srcip4[0]<<24)|((u_int)i.srcip4[1]<<16)|
+						((u_int)i.srcip4[2]<<8)|(u_int)i.srcip4[3])),target->ip4,(u_char)proto,
+						(8+(u_short)_datalen),(frame+s));
+					break;
+				case AF_INET6:
+					*(u_short*)(void*)(frame+s+6)=ip6_pseudocheck(i.srcip6,
+						target->ip6,(u_char)proto,(u_int)(8+_datalen),(frame+s));
+					break;
+			}
+
 			break;
 		case IPPROTO_UDPLITE:
-			*(u_short*)(void*)(frame+34)=(Pflag)?htons(Popt):htons(random_u16());   /* src port */
-			*(u_short*)(void*)(frame+36)=(pflag)?htons(popt):htons(80);             /* dst port */
-			*(u_short*)(void*)(frame+38)=htons(0);                                  /* checkcrg */
-			*(u_short*)(void*)(frame+40)=htons(0);                                  /* chksum */
+			*(u_short*)(void*)(frame+s)=(Pflag)?htons(Popt):htons(random_u16());	/* src port */
+			*(u_short*)(void*)(frame+s+2)=(pflag)?htons(popt):htons(80);           	/* dst port */
+			*(u_short*)(void*)(frame+s+4)=htons(0);                                 /* checkcrg */
+			*(u_short*)(void*)(frame+s+6)=htons(0);                                 /* chksum */
+
 			if (_data&&_datalen)
-				memcpy(frame+42,_data,_datalen);
-			*(u_short*)(void*)(frame+40)=ip4_pseudocheck(
-				htonl((u_int)(((u_int)i.srcip4[0]<<24)|((u_int)i.srcip4[1]<<16)|
-				((u_int)i.srcip4[2]<<8)|(u_int)i.srcip4[3])),target,IPPROTO_UDPLITE,
-				(8+(u_short)_datalen),(frame+34));
+				memcpy(frame+s+8,_data,_datalen);
+
+			switch (version) {
+				case AF_INET:
+					*(u_short*)(void*)(frame+s+6)=ip4_pseudocheck(
+						htonl((u_int)(((u_int)i.srcip4[0]<<24)|((u_int)i.srcip4[1]<<16)|
+						((u_int)i.srcip4[2]<<8)|(u_int)i.srcip4[3])),target->ip4,(u_char)proto,
+						(8+(u_short)_datalen),(frame+s));
+					break;
+				case AF_INET6:
+					*(u_short*)(void*)(frame+s+6)=ip6_pseudocheck(i.srcip6,
+						target->ip6,(u_char)proto,(u_int)(8+_datalen),(frame+s));
+					break;
+			}
+
 			break;
 	}
 
 	return frame;
 }
 
-static inline void stats(u_int target)
+static inline void stats(target_t *target)
 {
 	char t1[1000],t2[1000],t3[1000];
-	struct in_addr in;
+	char str[INET6_ADDRSTRLEN]={0};
+	struct in6_addr in6={0};
+	struct in_addr in={0};
 	
-	in.s_addr=target;
-	printf("\n----%s TRACEROUTE Statistics----\n",inet_ntoa(in));
+	switch (target->ver) {
+		case AF_INET:
+			in.s_addr=target->ip4;
+			inet_ntop(target->ver,&in,str,INET6_ADDRSTRLEN);
+			break;
+		case AF_INET6:
+			memcpy(in6.s6_addr,target->ip6,16);
+			inet_ntop(target->ver,&in6,str,INET6_ADDRSTRLEN);
+			break;
+	}
+	
+	printf("\n----%s TRACEROUTE Statistics----\n",str);
 	printf("%ld packets transmitted, %ld packets received",
 		ntransmitted,nreceived);
 	if (nreceived>ntransmitted)
@@ -208,8 +344,8 @@ static inline void stats(u_int target)
 			timefmt(tmin,t1,sizeof(t1)),
 			timefmt((long long)tsum/(long long)nreceived,t2,sizeof(t2)),
 			timefmt(tmax,t3,sizeof(t3)));
-	printf("target %s %s %d hops\n",inet_ntoa(in),
-    		(reached)?"was reached in":"has been missed for",hop);
+	printf("target %s %s %d hops\n",str,(reached)?"was reached in":
+		"has been missed for",hop);
 	putchar(0x0a);
 }
 
@@ -242,6 +378,7 @@ static inline noreturn void finish(int sig)
 
 static inline int importcidr(void)
 {
+	target_t target;
 	u_int host;
 	size_t n;
 
@@ -249,6 +386,7 @@ static inline int importcidr(void)
 	if ((block.cidr_cur)>=cvector_size(block.raw))
 		return 0;	/* close */
 
+	target.ver=AF_INET;
 	for (n=0;n<30;n++) {	/* group 30 targets */
 		host=cidr4_next(block.raw[block.cidr_cur],
 			(n+block.cidr_cur_pos));
@@ -257,7 +395,8 @@ static inline int importcidr(void)
 			block.cidr_cur_pos=0;
 			return 1;
 		}
-		cvector_push_back(targets,host);	/* add to targets */
+		target.ip4=host;
+		cvector_push_back(targets,target);	/* add to targets */
 	}
 
 	block.cidr_cur_pos+=n;	/* save current pos in current cidr in block*/
@@ -266,6 +405,7 @@ static inline int importcidr(void)
 
 static inline void getopts(int argc, char **argv)
 {
+	struct in6_addr		ipv6_addr;
 	struct ether_addr	*tmp;
 	const char		*ip;
 	u_int			a,b,c,d;
@@ -273,21 +413,23 @@ static inline void getopts(int argc, char **argv)
 	size_t			numtmp;
 	u_char			*hextmp;
 	cidr4_t			*cidr;
+	target_t		target;
 
 	if (argc<=1) {
 usage:
 		puts("Usage");
-		printf("  %s [flags] <ip dns cidr ...,>\n\n",argv[0]);
+		printf("  %s [flags] <ip4 ip6 dns cidr4 ...,>\n\n",argv[0]);
 		puts("  -I <device>  set your interface and his info");
-		puts("  -s <source>  set source custom IP address");
+		puts("  -s <source>  set source custom IP4 address");
+		puts("  -6 <source>  set source custom IPV6 address");
 		puts("  -n <count>   set your num of try");
 		puts("  -S <source>  set source custom MAC address");
-		puts("  -o <tos>     set your num in field Type Of Service");
+		puts("  -o <tos>     set num in Type Of Service/Traffic class");
 		puts("  -P <port>    set source (your) port");
-		puts("  -m <ttl>     set max ttl (num hops)");
+		puts("  -m <ttl>     set max ttl/hop limit (num hops)");
 		puts("  -i <time>    set interval between packets, ex: see down");
 		puts("  -w <time>    set wait time or timeout, ex: 10s or 10ms");
-		puts("  -f <ttl>     set first ttl (start hop)");
+		puts("  -f <ttl>     set first ttl/hop limit (start hop)");
 		puts("  -p <port>    set destination port");
 		puts("  -H <hex>     set payload data in hex numbers");
 		puts("  -a <ascii>   set payload data in ascii");
@@ -299,9 +441,9 @@ usage:
 		puts("  -U  use only udp packets");
 		puts("  -L  use only udp-lite packets");
 		puts("  -C  use only sctp-cookie packets");
-		puts("  -r  set Reserved Fragment flag");
-		puts("  -d  set Dont't Fragment flag");
-		puts("  -4  set More Fragment flag");
+		puts("  -r  set Reserved Fragment flag (ipv4)");
+		puts("  -d  set Dont't Fragment flag (ipv4)");
+		puts("  -4  set More Fragment flag (ipv4)");
 		puts("  -h  show this help message and exit");
 		puts("\nExamples");
 		printf("  %s google.com -A\n",argv[0]);
@@ -310,7 +452,7 @@ usage:
 		exit(0);
 	}
 
-	while ((opt=getopt(argc,argv,"hI:s:S:o:P:p:H:a:l:dr4m:f:n:w:AEYULCi:"))!=-1) {
+	while ((opt=getopt(argc,argv,"hI:s:S:o:P:p:H:a:l:dr4m:f:n:w:AEYULCi:6:"))!=-1) {
 		switch (opt) {
 			case 'A':
 				all=1;
@@ -372,6 +514,12 @@ usage:
 						optarg);
 				++sflag;
 				break;
+			case '6':
+				if ((inet_pton(AF_INET6,optarg,_6opt))<=0)
+					errx(1,"failed convert \"%s\" this (ipv6?)",
+						optarg);
+				++_6flag;
+				break;
 			case 'o':
 				str_to_size_t(optarg,&numtmp,0,UCHAR_MAX);
 				oopt=(u_char)numtmp;
@@ -429,6 +577,18 @@ usage:
 	block.cidr_cur=0,block.cidr_cur_pos=0;
 
 	for (n=optind;n<argc;n++) {
+		/* found ipv6 */
+		if (inet_pton(AF_INET6,argv[n],&ipv6_addr)==1) {
+			if (!i.support6)
+				errx(1,"this interface not suppport ipv6");
+			target.ver=AF_INET6;
+			memcpy(target.ip6,ipv6_addr.s6_addr,16);
+			cvector_push_back(targets,target);
+			continue;
+		}
+
+		if (!i.support6)
+			errx(1,"this interface not suppport ipv4");
 		if ((cidr=cidr4_str(argv[n]))) {
 			/* found cidr */
 			cvector_push_back(block.raw,cidr);
@@ -442,64 +602,107 @@ usage:
 			assert((sscanf(ip,"%u.%u.%u.%u",&a,&b,&c,&d)==4));
 		}
 		assert(a>=0&&a<=255&&b>=0&&b<=255&&c>=0&&c<=255&&d>=0&&d<=255);
-		cvector_push_back(targets,(htonl((a<<24)|(b<<16)|(c<<8)|d)));
+		target.ver=AF_INET,target.ip4=(htonl((a<<24)|(b<<16)|(c<<8)|d));
+		cvector_push_back(targets,target);
 	}
 }
 
 static inline u_char traceroutecallback(u_char *frame, size_t frmlen, void *arg)
 {
 	/* arg is target */
-	u_int *target=(u_int*)arg;
+	target_t *target=(target_t*)arg;
 	u_int tmp=0;
 
-	if (frmlen<42)	/* eth + ip + icmp */
-		return 0;
-
-	/* only ip frames */
-	if (ntohs(*(u_short*)(void*)(frame+12))!=0x0800)
-		return 0;
-	/* check ip src in first ip header */
-	memcpy(&tmp,(frame+26),sizeof(tmp));
-	if (tmp==*target) {
-		memcpy(&source,(frame+26),4);
-		/* reached */
-		reached=1;
-		return (reply_state=1);
+	switch (target->ver) {
+		case AF_INET:
+			source.ver=AF_INET;
+			if (frmlen<42)	/* eth + ip + icmp */
+				return 0;
+			/* only ip frames */
+			if (ntohs(*(u_short*)(void*)(frame+12))!=0x0800)
+				return 0;
+			/* check ip src in first ip header */
+			memcpy(&tmp,(frame+26),sizeof(tmp));
+			if (tmp==target->ip4) {
+				memcpy(&source.ip4,(frame+26),4);
+				/* reached */
+				reached=1;
+				return (reply_state=1);
+			}
+			if (frame[23]!=IPPROTO_ICMP)	/* only icmp packets */
+				return 0;
+			if (frame[34]!=11)	/* time exceed */
+				return 0;
+			if (memcmp((frame+30),i.srcip4,4)!=0)	/* ip dst */
+				return 0;
+			memcpy(&source.ip4,(frame+26),4);
+			/* check ipid in second ip header */
+			if (ntohs((*(u_short*)(void*)(frame+42+4)))!=lastipid)
+				return 0;
+			break;
+		case AF_INET6:
+			source.ver=AF_INET6;
+			if (frmlen<54)	/* eth ipv6 icmp */
+				return 0;
+			/* only ip6 frames */
+			if (ntohs(*(u_short*)(void*)(frame+12))!=0x86dd)
+				return 0;
+			if (!memcmp((frame+22),target->ip6,16)) {
+				memcpy(source.ip6,(frame+22),16);
+				/* reached */
+				reached=1;
+				return (reply_state=1);
+			}
+			if (frame[20]!=IPPROTO_ICMPV6)	/* only icmp6 packets */
+				return 0;
+			if (frame[54]!=3)	/* time exceed */
+				return 0;
+			if (memcmp((frame+38),i.srcip6,16)!=0)	/* ip dst */
+				return 0;
+			memcpy(source.ip6,(frame+22),16);
+			const u_int *inner_ipv6_hdr=(const u_int*)(void*)(frame+62);
+			u_int flowlabel=ntohl(inner_ipv6_hdr[0])&0x000FFFFF;
+			if (flowlabel!=lastipid)
+			    return 0;
+			break;
 	}
-	if (frame[23]!=IPPROTO_ICMP)	/* only icmp packets */
-		return 0;
-	if (frame[34]!=11)	/* time exceed */
-		return 0;
-	if (memcmp((frame+30),i.srcip4,4)!=0)	/* ip dst */
-		return 0;
-	memcpy(&source,(frame+26),4);
-
-	/* check ipid in second ip header */
-	if (ntohs((*(u_short*)(void*)(frame+42+4)))!=lastipid)
-		return 0;
 
 	/* aee */
 	reply_state=1;
 	return 1;
 }
 
-const char *resolve_dns(u_int ipv4)
+static inline const char *resolve_dns(target_t *t)
 {
 	static char res[2048+2];
-	struct sockaddr_in sa;
+	struct sockaddr_in sa4;
+	struct sockaddr_in6 sa6;
 	char dnsbuf[2048];
 
 	memset(dnsbuf,0,sizeof(dnsbuf));
-	memset(&sa,0,sizeof(sa));
 
-	sa.sin_family=AF_INET;
-	sa.sin_addr.s_addr=ipv4;
-
-	if (getnameinfo((struct sockaddr*)&sa,
-			 sizeof(sa),dnsbuf,sizeof(dnsbuf),
-			NULL,0,0)==0) {
-		snprintf(res,sizeof(res),"(%s)",dnsbuf);
-		return res;
+	switch (t->ver) {
+		case AF_INET:
+			memset(&sa4,0,sizeof(sa4));
+			sa4.sin_family=AF_INET;
+			sa4.sin_addr.s_addr=t->ip4;
+			if (getnameinfo((struct sockaddr*)&sa4,sizeof(sa4),
+					dnsbuf,sizeof(dnsbuf),NULL,0,0)==0) {
+				snprintf(res,sizeof(res),"(%s)",dnsbuf);
+				return res;
+			}
+			break;
+		case AF_INET6:
+			memset(&sa6,0,sizeof(sa6));
+			sa6.sin6_family=AF_INET6;
+			memcpy(&sa6.sin6_addr,t->ip6,16);
+			if (getnameinfo((struct sockaddr*)&sa6,sizeof(sa6),
+					dnsbuf,sizeof(dnsbuf),
+					NULL,0,0)==0) {
+				snprintf(res,sizeof(res),"(%s)",dnsbuf);
+				return res;
+			}
+			break;
 	}
 
 	return "(\?\?\?)";
@@ -530,17 +733,16 @@ static inline long long tvrtt(struct timeval *s, struct timeval *e)
 
 int main(int argc, char **argv)
 {
-	struct sockaddr_ll	sll={0};
-	u_char			*frame=NULL;
-	u_int			len=0;
-	cvector_iterator(u_int)	it=NULL;
-	size_t			hopid=1,j=0;
-	u_char			ok=0,p=0;
-	u_int			tmpip=0;
-	u_char			success=0;
-	char			time[1000];
-	int			tot=0,first=0;
-	struct in_addr		a={0};
+	struct sockaddr_ll		sll={0};
+	u_char				*frame=NULL;
+	u_int				len=0;
+	cvector_iterator(target_t)	it=NULL;
+	size_t				hopid=1,j=0;
+	u_char				ok=0,p=0;
+	target_t			tmpip={0};
+	u_char				success=0;
+	char				time[1000];
+	int				tot=0,first=0;
 
 	random_set(0);	/* random init */
 	Srandom(random_seed_u64());
@@ -555,6 +757,8 @@ int main(int argc, char **argv)
 		errx(1,"this interface doesn't fit");
 	if (sflag)	/* src your*/
 		memcpy(i.srcip4,&soptip,4);
+	if (_6flag)	/* src6 your*/
+		memcpy(i.srcip6,&_6opt,16);
 	if (Sflag)	/* srcmac your */
 		memcpy(i.srcmac,Soptmac,4);
 	if (datalen>(size_t)i.mtu-100)
@@ -582,9 +786,10 @@ try:
 		nreceived=0,ntransmitted=0;
 		tsum=0,tmin=LLONG_MAX,tmax=LLONG_MIN;
 		ttl=first,mttl=tot-(ttl-1);	/* fix time */
-		curtarget=*it,printstats=0;
-		reached=0,source=0;
-		lastipid=0,hop=0;
+		curtarget=it,printstats=0;
+		reached=0,lastipid=0,hop=0;
+		memset(&source,0,sizeof(source));
+		memset(&tmpip,0,sizeof(tmpip));
 
 		for (;mttl;mttl--) {
 			memset(rtts,0,(try*sizeof(long long)));
@@ -592,8 +797,8 @@ try:
 			printf("%d  ", ttl),fflush(stdout);
 			for (hopid=1,ok=0;hopid<=try;hopid++) {
 				nsdelay(interval);	/* delay ? */
-				if (!(frame=tracerouteframe(&len,*it,method,
-					(u_char*)data,(u_int)datalen)))	/* create frame */
+				if (!(frame=tracerouteframe(it->ver,&len,(void*)it,method,
+						(u_char*)data,(u_int)datalen)))	/* create frame */
 					errx(1,"failed create frame");
 				if (sendto(fd,frame,len,0,(struct sockaddr*)&sll,sizeof(sll))<0)
 					err(1,"failed send()");
@@ -635,9 +840,8 @@ try:
 print:
 				if (reply_state) {
 					rtts[hopid-1]=tvrtt(&tstamp_s,&tstamp_e);
-					if (!p||source!=tmpip) {
-						a.s_addr=source;
-						printf("%s %s",inet_ntoa(a),resolve_dns(source));
+					if (!p||!t_equal(&source,&tmpip)) {
+						printf("%s %s",t_str(&source),resolve_dns(&source));
 						p=1,tmpip=source;
 					}
 					if (!success)
@@ -659,7 +863,7 @@ print:
 			ttl++;
 		}
 		if (!printstats)
-			stats(*it),++printstats;
+			stats(it),++printstats;
 	}
 
 	/* cidr ?? */

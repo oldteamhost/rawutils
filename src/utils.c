@@ -336,6 +336,35 @@ u_short ip4_pseudocheck(const u_int src, const u_int dst,
 	return (u_short)sum;
 }
 
+u_short ip6_pseudocheck(u_char *src, u_char *dst, u_char nxt,
+	 u_int len, const void *hstart)
+{
+	struct pseudo
+	{
+		u_char	src[16];
+		u_char	dst[16];
+		u_int	length;
+		u_char	z0, z1, z2;
+		u_char	nxt;
+	} hdr;
+	int sum;
+
+	memcpy(hdr.src,src,16);
+	memcpy(hdr.dst,dst,16);
+	hdr.z0=hdr.z1=hdr.z2=0;
+	hdr.length=htonl(len);
+	hdr.nxt=nxt;
+
+	sum=ip_check_add(&hdr, sizeof(hdr), 0);
+	sum=ip_check_add(hstart, len, sum);
+	sum=ip_check_carry(sum);
+
+	if (nxt==IPPROTO_UDP&&sum==0)
+		sum=0xFFFF;	
+
+	return (u_short)sum;
+}
+
 #define BASE 65521U
 #define NMAX 5552
 

@@ -48,6 +48,10 @@ u_char *hex_ahtoh(char *txt, size_t *hexlen);
 /* chksum */
 u_short	ip4_pseudocheck(const u_int src, const u_int dst,
 	u_char proto, u_short len, const void *hstart);
+
+u_short ip6_pseudocheck(u_char *src, u_char *dst, u_char nxt,
+	 u_int len, const void *hstart);
+
 u_short	in_check(u_short *ptr, int nbytes);
 u_int adler32(u_int adler, const u_char *buf, size_t len);
 
