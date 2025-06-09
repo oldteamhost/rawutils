@@ -316,22 +316,8 @@ static inline u_char *tracerouteframe(int version, u_int *outlen, void *in_targe
 static inline void stats(target_t *target)
 {
 	char t1[1000],t2[1000],t3[1000];
-	char str[INET6_ADDRSTRLEN]={0};
-	struct in6_addr in6={0};
-	struct in_addr in={0};
 	
-	switch (target->ver) {
-		case AF_INET:
-			in.s_addr=target->ip4;
-			inet_ntop(target->ver,&in,str,INET6_ADDRSTRLEN);
-			break;
-		case AF_INET6:
-			memcpy(in6.s6_addr,target->ip6,16);
-			inet_ntop(target->ver,&in6,str,INET6_ADDRSTRLEN);
-			break;
-	}
-	
-	printf("\n----%s TRACEROUTE Statistics----\n",str);
+	printf("\n----%s TRACEROUTE Statistics----\n",t_str(target));
 	printf("%ld packets transmitted, %ld packets received",
 		ntransmitted,nreceived);
 	if (nreceived>ntransmitted)
@@ -344,8 +330,9 @@ static inline void stats(target_t *target)
 			timefmt(tmin,t1,sizeof(t1)),
 			timefmt((long long)tsum/(long long)nreceived,t2,sizeof(t2)),
 			timefmt(tmax,t3,sizeof(t3)));
-	printf("target %s %s %d hops\n",str,(reached)?"was reached in":
+	printf("target %s %s %d hops\n",t_str(target),(reached)?"was reached in":
 		"has been missed for",hop);
+
 	putchar(0x0a);
 }
 
@@ -587,7 +574,7 @@ usage:
 			continue;
 		}
 
-		if (!i.support6)
+		if (!i.support4)
 			errx(1,"this interface not suppport ipv4");
 		if ((cidr=cidr4_str(argv[n]))) {
 			/* found cidr */
@@ -660,10 +647,11 @@ static inline u_char traceroutecallback(u_char *frame, size_t frmlen, void *arg)
 			if (memcmp((frame+38),i.srcip6,16)!=0)	/* ip dst */
 				return 0;
 			memcpy(source.ip6,(frame+22),16);
+			/* check flowlabel in second ipv6 */
 			const u_int *inner_ipv6_hdr=(const u_int*)(void*)(frame+62);
 			u_int flowlabel=ntohl(inner_ipv6_hdr[0])&0x000FFFFF;
 			if (flowlabel!=lastipid)
-			    return 0;
+				return 0;
 			break;
 	}
 
@@ -684,7 +672,7 @@ static inline const char *resolve_dns(target_t *t)
 	switch (t->ver) {
 		case AF_INET:
 			memset(&sa4,0,sizeof(sa4));
-			sa4.sin_family=AF_INET;
+			sa4.sin_family=t->ver;
 			sa4.sin_addr.s_addr=t->ip4;
 			if (getnameinfo((struct sockaddr*)&sa4,sizeof(sa4),
 					dnsbuf,sizeof(dnsbuf),NULL,0,0)==0) {
@@ -694,7 +682,7 @@ static inline const char *resolve_dns(target_t *t)
 			break;
 		case AF_INET6:
 			memset(&sa6,0,sizeof(sa6));
-			sa6.sin6_family=AF_INET6;
+			sa6.sin6_family=t->ver;
 			memcpy(&sa6.sin6_addr,t->ip6,16);
 			if (getnameinfo((struct sockaddr*)&sa6,sizeof(sa6),
 					dnsbuf,sizeof(dnsbuf),
