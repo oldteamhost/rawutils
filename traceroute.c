@@ -29,48 +29,12 @@
 #include "include/utils.h"
 
 typedef struct __target {
-	int ver;
+	int v;	/* version */
 	union {
-		u_char ip6[16];
-		u_int ip4;
+		u_char	ip6[16];
+		u_int	ip4;
 	};
 } target_t;
-
-static inline int t_equal(const target_t *a, const target_t *b)
-{
-	if (a->ver!=b->ver)
-		return 0;
-	if (a->ver==AF_INET)
-		return a->ip4==b->ip4;
-	else if (a->ver==AF_INET6)
-		return memcmp(a->ip6,b->ip6,sizeof(a->ip6))==0;
-	return 0;
-}
-
-static inline const char *t_str(const target_t *t)
-{
-	static char buf[INET6_ADDRSTRLEN];
-	struct in_addr addr4={0};
-	struct in6_addr addr6={0};
-
-	memset(buf,0,sizeof(buf));
-	switch (t->ver) {
-		case AF_INET:
-			addr4.s_addr=t->ip4;
-			if (!inet_ntop(AF_INET, &addr4, buf, sizeof(buf)))
-				return "??? ip4";
-			break;
-		case AF_INET6:
-			memcpy(&addr6, t->ip6, 16);
-			if (!inet_ntop(AF_INET6, &addr6, buf, sizeof(buf)))
-				return "??? ip6";
-			break;
-		default:
-			 return "Unknown IP version";
-	}
-
-	return buf;
-}
 
 cvector(target_t)	targets=NULL;	/* cvector_vector_type */
 cidr_block_t		block;		/* cidr targets */
@@ -112,29 +76,65 @@ long long		*rtts=NULL;	/* times free() */
 u_char			_6flag=0;
 u_char			_6opt[16];
 
-static inline u_char *tracerouteframe(int version, u_int *outlen, void *in_target,
+static inline int t_equal(const target_t *a, const target_t *b)
+{
+	if (a->v!=b->v)
+		return 0;
+	if (a->v==AF_INET)
+		return a->ip4==b->ip4;
+	else if (a->v==AF_INET6)
+		return memcmp(a->ip6,b->ip6,sizeof(a->ip6))==0;
+	return 0;
+}
+
+static inline const char *t_str(const target_t *t)
+{
+	static char buf[INET6_ADDRSTRLEN];
+	struct in_addr addr4={0};
+	struct in6_addr addr6={0};
+
+	memset(buf,0,sizeof(buf));
+	switch (t->v) {
+		case AF_INET:
+			addr4.s_addr=t->ip4;
+			if (!inet_ntop(AF_INET, &addr4, buf, sizeof(buf)))
+				return "??? ip4";
+			break;
+		case AF_INET6:
+			memcpy(&addr6, t->ip6, 16);
+			if (!inet_ntop(AF_INET6, &addr6, buf, sizeof(buf)))
+				return "??? ip6";
+			break;
+		default:
+			 return "Unknown IP version";
+	}
+
+	return buf;
+}
+
+
+static inline u_char *tracerouteframe(u_int *outlen, target_t *target,
 	 int proto, u_char *_data, u_int _datalen)
 {
-	target_t        *target=NULL;	/* target */
-	u_char		*frame;		/* result frame (packet) */
-	int		n,s;		/* counter */
+	u_char	*frame;	/* result frame (packet) */
+	int	n,s;	/* counter */
 
 	assert(proto);
 	assert(outlen);
-	assert(in_target);
+	assert(target);
 
 	/* only ipv4 or ipv6 */
-	assert(version==AF_INET||version==AF_INET6);
+	assert(target->v==AF_INET||target->v==AF_INET6);
 
-	*outlen=0,s=0;
-	if (version==AF_INET6) {
+	*outlen=0;
+	*outlen+=14;		/* ethernet 2 */
+	*outlen+=20;		/* ipv4 */
+	if (target->v==AF_INET6) {
 		*outlen+=20;		/* ipv6 (40) */
-		if (proto==IPPROTO_ICMP)	/* fix proto */
-			proto=IPPROTO_ICMPV6;
+		proto=(proto==IPPROTO_ICMP)?	/* fix proto */
+			IPPROTO_ICMPV6:proto;
 	}
-	*outlen+=14;			/* ethernet 2 */
-	*outlen+=20;			/* ipv4 */
-	s=(int)*outlen;
+	s=(int)*outlen;	/* this skip ad payload */
 	switch (proto) {
 		case IPPROTO_TCP:
 			*outlen+=20;
@@ -153,18 +153,16 @@ static inline u_char *tracerouteframe(int version, u_int *outlen, void *in_targe
 
 	if (!(frame=calloc(1,*outlen)))
 		errx(1,"failed allocated frame (%ld len)",*outlen);
-	lastipid=random_u16();
-	target=(target_t*)in_target;
-	hop=ttl;
+	lastipid=random_u16(),hop=ttl;
 
 	/* ETHERNET 2 */
 	memcpy(frame,i.dstmac,6);				/* dst mac */
 	memcpy(frame+6,i.srcmac,6);				/* src mac */
-	*(u_short*)(void*)(frame+12)=(version==AF_INET)?
+	*(u_short*)(void*)(frame+12)=(target->v==AF_INET)?
 			htons(0x0800):htons(0x86DD);		/* ip4/ip6 payload */
 
 	/* IP4 / IP6 */
-	switch (version) {
+	switch (target->v) {
 		case AF_INET:
 			frame[14]=(4<<4)|5/*5+(optslen/4)*/;			/* version|ihl */
 			frame[15]=(oflag)?oopt:0;				/* tos */
@@ -207,7 +205,7 @@ static inline u_char *tracerouteframe(int version, u_int *outlen, void *in_targe
 			if (_data&&_datalen)
 			    memcpy(frame+s+8,_data,_datalen);
 
-			switch (version) {
+			switch (target->v) {
 				case AF_INET:
 					*(u_short*)(void*)(frame+s+2)=in_check((u_short*)
 						(void*)(frame+s),(int)(8+_datalen));
@@ -233,7 +231,7 @@ static inline u_char *tracerouteframe(int version, u_int *outlen, void *in_targe
 			if(_data&&_datalen)
 				memcpy(frame+s+20,_data,_datalen);
 
-			switch (version) {
+			switch (target->v) {
 				case AF_INET:
 					*(u_short*)(void*)(frame+s+16)=ip4_pseudocheck(
 						htonl((u_int)(((u_int)i.srcip4[0]<<24)|((u_int)i.srcip4[1]<<16)|
@@ -271,7 +269,7 @@ static inline u_char *tracerouteframe(int version, u_int *outlen, void *in_targe
 			if(_data&&_datalen)
 				memcpy(frame+s+8,_data,_datalen);
 
-			switch (version) {
+			switch (target->v) {
 				case AF_INET:
 					*(u_short*)(void*)(frame+s+6)=ip4_pseudocheck(
 						htonl((u_int)(((u_int)i.srcip4[0]<<24)|((u_int)i.srcip4[1]<<16)|
@@ -294,7 +292,7 @@ static inline u_char *tracerouteframe(int version, u_int *outlen, void *in_targe
 			if (_data&&_datalen)
 				memcpy(frame+s+8,_data,_datalen);
 
-			switch (version) {
+			switch (target->v) {
 				case AF_INET:
 					*(u_short*)(void*)(frame+s+6)=ip4_pseudocheck(
 						htonl((u_int)(((u_int)i.srcip4[0]<<24)|((u_int)i.srcip4[1]<<16)|
@@ -373,7 +371,7 @@ static inline int importcidr(void)
 	if ((block.cidr_cur)>=cvector_size(block.raw))
 		return 0;	/* close */
 
-	target.ver=AF_INET;
+	target.v=AF_INET;
 	for (n=0;n<30;n++) {	/* group 30 targets */
 		host=cidr4_next(block.raw[block.cidr_cur],
 			(n+block.cidr_cur_pos));
@@ -566,7 +564,7 @@ usage:
 	for (n=optind;n<argc;n++) {
 		/* found ipv6 */
 		if (inet_pton(AF_INET6,argv[n],&ipv6_addr)==1) {
-			target.ver=AF_INET6;
+			target.v=AF_INET6;
 			memcpy(target.ip6,ipv6_addr.s6_addr,16);
 			cvector_push_back(targets,target);
 			continue;
@@ -585,7 +583,7 @@ usage:
 			assert((sscanf(ip,"%u.%u.%u.%u",&a,&b,&c,&d)==4));
 		}
 		assert(a>=0&&a<=255&&b>=0&&b<=255&&c>=0&&c<=255&&d>=0&&d<=255);
-		target.ver=AF_INET,target.ip4=(htonl((a<<24)|(b<<16)|(c<<8)|d));
+		target.v=AF_INET,target.ip4=(htonl((a<<24)|(b<<16)|(c<<8)|d));
 		cvector_push_back(targets,target);
 	}
 }
@@ -596,9 +594,9 @@ static inline u_char traceroutecallback(u_char *frame, size_t frmlen, void *arg)
 	target_t *target=(target_t*)arg;
 	u_int tmp=0;
 
-	switch (target->ver) {
+	switch (target->v) {
 		case AF_INET:
-			source.ver=AF_INET;
+			source.v=AF_INET;
 			if (frmlen<42)	/* eth + ip + icmp */
 				return 0;
 			/* only ip frames */
@@ -624,7 +622,7 @@ static inline u_char traceroutecallback(u_char *frame, size_t frmlen, void *arg)
 				return 0;
 			break;
 		case AF_INET6:
-			source.ver=AF_INET6;
+			source.v=AF_INET6;
 			if (frmlen<54)	/* eth ipv6 icmp */
 				return 0;
 			/* only ip6 frames */
@@ -665,10 +663,10 @@ static inline const char *resolve_dns(target_t *t)
 
 	memset(dnsbuf,0,sizeof(dnsbuf));
 
-	switch (t->ver) {
+	switch (t->v) {
 		case AF_INET:
 			memset(&sa4,0,sizeof(sa4));
-			sa4.sin_family=t->ver;
+			sa4.sin_family=t->v;
 			sa4.sin_addr.s_addr=t->ip4;
 			if (getnameinfo((struct sockaddr*)&sa4,sizeof(sa4),
 					dnsbuf,sizeof(dnsbuf),NULL,0,0)==0) {
@@ -678,7 +676,7 @@ static inline const char *resolve_dns(target_t *t)
 			break;
 		case AF_INET6:
 			memset(&sa6,0,sizeof(sa6));
-			sa6.sin6_family=t->ver;
+			sa6.sin6_family=t->v;
 			memcpy(&sa6.sin6_addr,t->ip6,16);
 			if (getnameinfo((struct sockaddr*)&sa6,sizeof(sa6),
 					dnsbuf,sizeof(dnsbuf),
@@ -767,9 +765,9 @@ int main(int argc, char **argv)
 try:
 	for (it=cvector_begin(targets);it!=cvector_end(targets);++it) {
 
-		if (it->ver==AF_INET&&!i.support4)
+		if (it->v==AF_INET&&!i.support4)
 			errx(1,"this interface not suppport ipv4");
-		if (it->ver==AF_INET6&&!i.support6)
+		if (it->v==AF_INET6&&!i.support6)
 			errx(1,"this interface not suppport ipv6");
 		
 		nreceived=0,ntransmitted=0;
@@ -786,7 +784,7 @@ try:
 			printf("%d  ", ttl),fflush(stdout);
 			for (hopid=1,ok=0;hopid<=try;hopid++) {
 				nsdelay(interval);	/* delay ? */
-				if (!(frame=tracerouteframe(it->ver,&len,(void*)it,method,
+				if (!(frame=tracerouteframe(&len,it,method,
 						(u_char*)data,(u_int)datalen)))	/* create frame */
 					errx(1,"failed create frame");
 				if (sendto(fd,frame,len,0,(struct sockaddr*)&sll,sizeof(sll))<0)
