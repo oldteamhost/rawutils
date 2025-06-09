@@ -566,16 +566,12 @@ usage:
 	for (n=optind;n<argc;n++) {
 		/* found ipv6 */
 		if (inet_pton(AF_INET6,argv[n],&ipv6_addr)==1) {
-			if (!i.support6)
-				errx(1,"this interface not suppport ipv6");
 			target.ver=AF_INET6;
 			memcpy(target.ip6,ipv6_addr.s6_addr,16);
 			cvector_push_back(targets,target);
 			continue;
 		}
 
-		if (!i.support4)
-			errx(1,"this interface not suppport ipv4");
 		if ((cidr=cidr4_str(argv[n]))) {
 			/* found cidr */
 			cvector_push_back(block.raw,cidr);
@@ -771,6 +767,11 @@ int main(int argc, char **argv)
 try:
 	for (it=cvector_begin(targets);it!=cvector_end(targets);++it) {
 
+		if (it->ver==AF_INET&&!i.support4)
+			errx(1,"this interface not suppport ipv4");
+		if (it->ver==AF_INET6&&!i.support6)
+			errx(1,"this interface not suppport ipv6");
+		
 		nreceived=0,ntransmitted=0;
 		tsum=0,tmin=LLONG_MAX,tmax=LLONG_MIN;
 		ttl=first,mttl=tot-(ttl-1);	/* fix time */
