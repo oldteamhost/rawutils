@@ -16,7 +16,7 @@ AC_ARG_ENABLE([debug],
   [debug=false]
 )
 if test "x$debug" = "xtrue"; then
-  CFLAGS="-Wall -Werror -Wextra -Wpedantic -Wconversion -Wshadow -Wundef -Wcast-align -Wformat-security -Wnull-dereference -O0 -g -fPIC -march=native -mtune=native "
+  CFLAGS="-Wall -Werror -Wextra -Wpedantic -Wconversion -Wshadow -Wundef -Wcast-align -Wformat-security -Wnull-dereference -O0 -g -fPIC -march=native -mtune=native -fsanitize=leak"
 else
   CFLAGS="-Wall -Wextra -O3 -flto -fPIC -march=native -mtune=native"
 fi

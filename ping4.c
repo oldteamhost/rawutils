@@ -134,8 +134,5 @@ int main(int argc, char **argv)
 	signal(SIGINT,finish);
 	gettimeofday(&_st,NULL);
 	getopts(argc,argv);
-	cidr4_str("192.168.1.100/32");
-	cidr4_str("192.168.1.100/31");
-	cidr4_str("192.168.1.100/0");
 	return 0;
 }

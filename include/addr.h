@@ -22,43 +22,47 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __RAW_U_INTF_H
-#define __RAW_U_INTF_H
+#ifndef __RAW_U_ADDR_H
+#define __RAW_U_ADDR_H
 
 #include "include.h"
-#include "cvector.h"
-#include "err.h"
 
-typedef struct __intf_t
-{
-	u_char	srcmac[6];
-	u_char	dstmac[6];
-	u_char	srcip4[4];
-	u_char	srcip6[16];	/* ipv6 support */
-	u_char	gatewayip4[4];
-	char	name[IFNAMSIZ];
-	int	index;
-	int	mtu;
-	short	flags;
-	u_char	support4,	/* ipv4 */
-		support6;	/* ipv6 */
-} intf_t;
+#define HAVE_UINT128	/* uint128_t est */
 
-void	intfget(intf_t *i, const char *ifname);
-void	intfget_any(intf_t *i);
-int	intf_is_network_sendable(intf_t *i);
+/*
+ * LIBDNET STYLE
+ * ipv4, ipv6, mac, cidr4,
+ * cidr6
+ */
+typedef struct __addr_t {
+#define AFIP4	AF_INET
+#define AFIP6	AF_INET6
+#define AFMAC	3
+	int		af;		/* address family */
+	union {
+		u_char	ip4[4],		/* ipv4 address */
+			ip6[16],	/* ipv6 address */
+			mac[6];		/* mac address */
+	} addr;
+	struct {
+		int	bits;		/* cidr bits ( /bits ) */
+		u_char	mask[16],	/* cidr mask */
+			broadcast[16],	/* cidr broadcast address */
+			network[16];	/* cidr network address */
+	} block;
+} addr_t;
 
-typedef struct __cidr4_t
-{
-	u_int addr,mask,network,
-		broadcast,s,e;
-	size_t num;	/* num of cidr */
-} cidr4_t;
-
-cidr4_t *cidr4_str(const char *txt);
-/* return ipv4 in htonl() */
-u_int	cidr4_next(cidr4_t *c, size_t start);
-void	cidr4_free(cidr4_t *c);
-void	cidr4_free_callback(void *c);
+int	a_pton(addr_t *a, const char *cp);		/* convert str to addr_t */
+int	a_ntop(addr_t *a, char *dst, size_t dstlen);	/* convert addr_t to str */
+int	a_cmp(const addr_t *a, const addr_t *b);		/* a == b ?? */
+char	*a_ntop_c(addr_t *a);				/* ntop but return static buffer */
+#ifdef HAVE_UINT128
+	int	a_cnth(addr_t *a, __uint128_t n, addr_t *dst);	/* return cidr[n] */
+#else
+	int	a_cnth(addr_t *a, size_t n, addr_t *dst);
+#endif
+int	a_bcast(const addr_t *a, addr_t *b);	/* get broadcast */
+int	a_net(const addr_t *a, addr_t *b);	/* get network */
+int	a_mask(const addr_t *a, addr_t *b);	/* get mask */
 
 #endif

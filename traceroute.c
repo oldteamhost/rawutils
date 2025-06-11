@@ -28,6 +28,13 @@
 #include "include/random.h"
 #include "include/utils.h"
 
+typedef struct __cidr_block_t
+{
+	cvector(cidr4_t*)	raw;
+	size_t cidr_cur;	/* current */
+	size_t cidr_cur_pos;	/* current position on cidr */
+} cidr_block_t;
+
 typedef struct __target {
 	int v;	/* version */
 	union {
@@ -666,7 +673,7 @@ static inline const char *resolve_dns(target_t *t)
 	switch (t->v) {
 		case AF_INET:
 			memset(&sa4,0,sizeof(sa4));
-			sa4.sin_family=t->v;
+			sa4.sin_family=(u_short)t->v;
 			sa4.sin_addr.s_addr=t->ip4;
 			if (getnameinfo((struct sockaddr*)&sa4,sizeof(sa4),
 					dnsbuf,sizeof(dnsbuf),NULL,0,0)==0) {
@@ -676,7 +683,7 @@ static inline const char *resolve_dns(target_t *t)
 			break;
 		case AF_INET6:
 			memset(&sa6,0,sizeof(sa6));
-			sa6.sin6_family=t->v;
+			sa6.sin6_family=(u_short)t->v;
 			memcpy(&sa6.sin6_addr,t->ip6,16);
 			if (getnameinfo((struct sockaddr*)&sa6,sizeof(sa6),
 					dnsbuf,sizeof(dnsbuf),

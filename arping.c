@@ -26,14 +26,22 @@
 #include "include/intf.h"
 #include "include/cvector.h"
 #include "include/utils.h"
+#include "include/addr.h"
 
-cvector(u_int)		targets=NULL;	/* cvector_vector_type */
-cidr_block_t		block;		/* cidr targets */
+typedef struct __cidr_block_t
+{
+	cvector(addr_t)	raw;	/* cidrs */
+	size_t		cur;	/* current */
+	size_t		curpos;	/* current position on cidr */
+} cidr_block_t;
+
+cvector(addr_t)		targets=NULL;	/* cvector_vector_type */
+cidr_block_t		block;		/* cidr targets*/
 struct timeval		_st,_et;	/* total time */
 u_char			Iflag=0;
 intf_t			i={0};
 u_char			tflag=0;
-u_char			topt[6]={0};
+addr_t			topt;
 int			op=1;	/* default arp operation ARPREQUEST */
 u_char			_0flag=0;
 u_char			Bflag=0;
@@ -49,28 +57,26 @@ u_char			Dflag=0;
 u_char			reply_state=0;	/* last recv status */
 size_t			nreceived=0,ntransmitted=0;
 long long		tsum=0,tmin=LLONG_MAX,tmax=LLONG_MIN;
-u_int			curtarget=0;	/* current target */
+addr_t			curtarget;	/* current target */
 u_char			printstats=0;	/* last stats print? */
 u_char			lastmac[6];	/* last get mac */
 u_char			eflag=0;
 u_char			vflag=0;
 u_char			sflag=0;
-u_int			soptip=0;
+addr_t			sopt;
 size_t			Num=0;	/* -N */
 u_char			Sflag=0;
-u_char			Soptmac[6];
+addr_t			Sopt;
 u_char			Gflag=0;
 size_t			nbroadcast=0;	/* count broadcast frames */
 size_t			nloss=0;	/* count loss frames */
 
-static inline void stats(u_int target)
+static inline void stats(addr_t *target)
 {
 	char t1[1000],t2[1000],t3[1000];
-	struct in_addr in;
 
 	if (!Dflag) {
-		in.s_addr=target;
-		printf("\n----%s ARPING Statistics----\n",inet_ntoa(in));
+		printf("\n----%s ARPING Statistics----\n",a_ntop_c(target));
 		printf("%ld packets transmitted (%ld broadcast), %ld packets received",
 			ntransmitted,nbroadcast,nreceived);
 		if (ntransmitted) {
@@ -96,36 +102,13 @@ static inline void stats(u_int target)
 	}
 }
 
-static inline int importcidr(void)
-{
-	u_int host;
-	size_t n;
-
-	/* cidr end */
-	if ((block.cidr_cur)>=cvector_size(block.raw))
-		return 0;	/* close */
-
-	for (n=0;n<30;n++) {	/* group 30 targets */
-		host=cidr4_next(block.raw[block.cidr_cur],
-			(n+block.cidr_cur_pos));
-		if (host==0) {	/* is last */
-			++block.cidr_cur;
-			block.cidr_cur_pos=0;
-			return 1;
-		}
-		cvector_push_back(targets,host);	/* add to targets */
-	}
-
-	block.cidr_cur_pos+=n;	/* save current pos in current cidr in block*/
-	return 1;
-}
 
 static inline noreturn void finish(int sig)
 {
 	(void)sig;
 	/* print stats if not print */
 	if (!printstats)
-		stats(curtarget);
+		stats(&curtarget);
 	gettimeofday(&_et,NULL);
 	if (!Dflag)
 		endmsg(&_st,&_et);
@@ -133,24 +116,46 @@ static inline noreturn void finish(int sig)
 		close(fd);
 	if (targets)
 		cvector_free(targets);	/* targets */
+	if (block.raw)
+		cvector_free(block.raw);	/* cidr targets */
 	if (buffer)	/* recv buffer */
 		free(buffer);
-	if (block.raw)
-		cvector_free(block.raw);	/* cidrs */
 	if (nreceived)
 		exit(0);
 	else
 		exit(1);
 }
 
+static inline int importcidr(void)
+{
+	addr_t host;
+	size_t n;
+
+	/* cidr end */
+	if ((block.cur)>=cvector_size(block.raw))
+		return 0;	/* close */
+
+	for (n=0;n<30;n++) {	/* group 30 targets */
+		if ((a_cnth(&block.raw[block.cur],
+				(n+block.curpos),&host))==-1) {	/* is last */
+			++block.cur;
+			block.curpos=0;
+			return 1;
+		}
+		cvector_push_back(targets,host);	/* add to targets */
+	}
+
+	block.curpos+=n;	/* save current pos in current cidr in block*/
+	return 1;
+}
+
+
 static inline void getopts(int argc, char **argv)
 {
-	struct ether_addr	*tmp;
 	const char		*ip;
-	u_int			a,b,c,d;
 	int			opt,n;
 	size_t			numtmp;
-	cidr4_t			*cidr;
+	addr_t			addr;
 
 	if (argc<=1) {
 usage:
@@ -190,11 +195,13 @@ usage:
 				/* check in main() */
 				break;
 			case 't':
-				tflag++;
-				if (!(tmp=ether_aton(optarg)))
+				if ((a_pton(&topt,optarg))==-1)
 					errx(1,"failed convert \"%s\" mac address",
 						optarg);
-				memcpy(topt,tmp->ether_addr_octet,6);
+				if (topt.af!=AFMAC)
+					errx(1,"is not MAC address \"%s\"",
+						optarg);
+				tflag++;
 				break;
 			case 'o':
 				str_to_size_t(optarg,&numtmp,1,4);
@@ -208,16 +215,21 @@ usage:
 				++Gflag;
 				break;
 			case 's':
-				if ((soptip=inet_addr(optarg))==INADDR_NONE)
-					errx(1,"failed convert \"%s\" this (ipv4?)",
+				if ((a_pton(&sopt,optarg))==-1)
+					errx(1,"failed convert \"%s\" this",
+						optarg);
+				if (sopt.af!=AFIP4)
+					errx(1,"support only IPv4 address \"%s\"",
 						optarg);
 				++sflag;
 				break;
 			case 'S':
-				if (!(tmp=ether_aton(optarg)))
+				if ((a_pton(&Sopt,optarg))==-1)
 					errx(1,"failed convert \"%s\" mac address",
 						optarg);
-				memcpy(Soptmac,tmp->ether_addr_octet,6);
+				if (Sopt.af!=AFMAC)
+					errx(1,"is not MAC address \"%s\"",
+						optarg);
 				++Sflag;
 				break;
 			case 'D':
@@ -261,8 +273,10 @@ usage:
 	}
 	if (Bflag) {
 		/* 255.255.255.255 */
-		a=b=c=d=255;
-		cvector_push_back(targets,(htonl((a<<24)|(b<<16)|(c<<8)|d)));
+		addr.af=AFIP4;
+		addr.block.bits=-1;
+		memset(addr.addr.ip4,0xff,4);
+		cvector_push_back(targets,addr);
 	}
 	else if (Gflag) {
 		/* ... see main()  */
@@ -272,25 +286,28 @@ usage:
 		if (n<=0)
 			goto usage;
 
-		cvector_init(block.raw,sizeof(cidr4_t*),
-			cidr4_free_callback);
-		block.cidr_cur=0,block.cidr_cur_pos=0;
+		block.cur=0;
+		block.curpos=0;
 
 		for (n=optind;n<argc;n++) {
-			if ((cidr=cidr4_str(argv[n]))) {
-				/* found cidr */
-				cvector_push_back(block.raw,cidr);
-				continue;
-			}
-
-			if (sscanf(argv[n],"%d.%d.%d.%d",&a,&b,&c,&d)!=4) {
+			if ((a_pton(&addr,argv[n]))==-1) {
 				/* ok, this dns or fucking error? */
 				if (!(ip=resolve_ipv4(argv[n])))
 					errx(1,"failed resolution \"%s\" name",argv[n]);
-				assert((sscanf(ip,"%u.%u.%u.%u",&a,&b,&c,&d)==4));
+				assert((a_pton(&addr,ip))!=-1);
+				
 			}
-			assert(a>=0&&a<=255&&b>=0&&b<=255&&c>=0&&c<=255&&d>=0&&d<=255);
-			cvector_push_back(targets,(htonl((a<<24)|(b<<16)|(c<<8)|d)));
+			switch (addr.af) {
+				case AFIP6: case AFMAC:
+					errx(1,"support only IPv4 address \"%s\"",argv[n]);
+				default:
+					break;
+					
+			}
+			if (addr.block.bits!=-1)
+				cvector_push_back(block.raw,addr);
+			else
+				cvector_push_back(targets,addr);
 		}
 	}
 }
@@ -326,7 +343,7 @@ static inline u_char arpcallback(u_char *frame, size_t frmlen, void *arg)
 	if (ntohs(*(u_short*)(void*)(frame+12))!=0x0806)
 		return 0;
 	if (tflag)	/* mac src */
-		if (memcmp(frame+6,topt,6)!=0)
+		if (memcmp(frame+6,topt.addr.mac,6)!=0)
 			return 0;
 	/* opcode arp */
 	switch (ntohs(*(u_short*)(void*)(frame+20))) {
@@ -526,7 +543,7 @@ static inline void arpinfo(u_char *frame, size_t frmlen, const char *time, size_
 		id,time); /* id pkt and rtt */
 }
 
-static inline u_char *arpframe(u_int *outlen, u_int target)
+static inline u_char *arpframe(u_int *outlen, addr_t *target)
 {
 	u_char *frame;
 
@@ -546,11 +563,11 @@ static inline u_char *arpframe(u_int *outlen, u_int target)
 	memcpy(frame+22,i.srcmac,6);			/* sha */
 	memcpy(frame+28,i.srcip4,4);			/* spa */
 	memset(frame+32,0xff,6);			/* tha */
-	memcpy(frame+38,&target,4);			/* tpa */
+	memcpy(frame+38,target->addr.ip4,4);		/* tpa */
 
 	if (tflag) {
-		memcpy(frame,topt,6);
-		memcpy(frame+32,topt,6);
+		memcpy(frame,topt.addr.mac,6);
+		memcpy(frame+32,topt.addr.mac,6);
 	}
 	else if (reply_state&&!bflag&&lastmac[0]!='\n') {
 		memcpy(frame,lastmac,6);
@@ -569,13 +586,13 @@ static inline u_char *arpframe(u_int *outlen, u_int target)
 
 int main(int argc, char **argv)
 {
-	struct sockaddr_ll	sll={0};
-	cvector_iterator(u_int)	it;
-	u_char			*frame=NULL;
-	char			diff[1000];
-	size_t			tot=0;
-	ssize_t			ret=0;
-	u_int			len=0;
+	struct sockaddr_ll		sll={0};
+	cvector_iterator(addr_t)	it;
+	u_char				*frame=NULL;
+	char				diff[1000];
+	size_t				tot=0;
+	ssize_t				ret=0;
+	u_int				len=0;
 
 	signal(SIGINT,finish);
 	gettimeofday(&_st,NULL);
@@ -590,13 +607,16 @@ int main(int argc, char **argv)
 	if (_0flag)	/* src 0.0.0.0 */
 		memset(i.srcip4,0x00,4);
 	if (sflag)	/* src your*/
-		memcpy(i.srcip4,&soptip,4);
+		memcpy(i.srcip4,sopt.addr.ip4,4);
 	if (Sflag)	/* srcmac your */
-		memcpy(i.srcmac,Soptmac,4);
-	if (Gflag) /* gateway ut target */
-		cvector_push_back(targets, htonl(((u_int)i.gatewayip4[0]<<24)|
-			((u_int)i.gatewayip4[1]<<16)|((u_int)i.gatewayip4[2]<<8)|
-			(u_int)i.gatewayip4[3]));
+		memcpy(i.srcmac,Sopt.addr.mac,6);
+	if (Gflag) /* gateway ut target */ {
+		addr_t addr;
+		addr.af=AFIP4;
+		addr.block.bits=-1;
+		memcpy(addr.addr.ip4,i.gatewayip4,4);
+		cvector_push_back(targets,addr);
+	}
 
 	isroot();
 	if ((fd=socket(AF_PACKET,SOCK_RAW,htons(ETH_P_ALL)))<0)
@@ -611,6 +631,7 @@ int main(int argc, char **argv)
 		startmsg();
 	importcidr();
 	num=(fflag||Num)?1:num,tot=num;
+
 try:
 	for (it=cvector_begin(targets);it!=cvector_end(targets);++it) {
 
@@ -621,7 +642,7 @@ try:
 		lastmac[0]='\n';
 
 		for (;num;num--) {
-			if (!(frame=arpframe(&len,*it)))	/* create frame */
+			if (!(frame=arpframe(&len,it)))	/* create frame */
 				errx(1,"failed create frame");
 			if (sendto(fd,frame,len,0,(struct sockaddr*)&sll,sizeof(sll))<0)
 				err(1,"failed send()");
@@ -676,10 +697,8 @@ try:
 				nsdelay(delay);
 		}
 		if (!printstats)
-			stats(*it),++printstats;
+			stats(it),++printstats;
 	}
-
-	/* cidr ?? */
 	cvector_clear(targets);
 	if (importcidr()!=0)
 		goto try;
