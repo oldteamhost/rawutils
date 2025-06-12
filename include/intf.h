@@ -48,17 +48,4 @@ void	intfget(intf_t *i, const char *ifname);
 void	intfget_any(intf_t *i);
 int	intf_is_network_sendable(intf_t *i);
 
-typedef struct __cidr4_t
-{
-	u_int addr,mask,network,
-		broadcast,s,e;
-	size_t num;	/* num of cidr */
-} cidr4_t;
-
-cidr4_t *cidr4_str(const char *txt);
-/* return ipv4 in htonl() */
-u_int	cidr4_next(cidr4_t *c, size_t start);
-void	cidr4_free(cidr4_t *c);
-void	cidr4_free_callback(void *c);
-
 #endif
