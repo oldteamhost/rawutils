@@ -149,7 +149,6 @@ static inline int importcidr(void)
 	return 1;
 }
 
-
 static inline void getopts(int argc, char **argv)
 {
 	const char		*ip;

@@ -55,6 +55,7 @@ typedef struct __addr_t {
 int	a_pton(addr_t *a, const char *cp);		/* convert str to addr_t */
 int	a_ntop(addr_t *a, char *dst, size_t dstlen);	/* convert addr_t to str */
 int	a_cmp(const addr_t *a, const addr_t *b);		/* a == b ?? */
+int	a_cmp_addr(const addr_t *a, const addr_t *b);		/* a.addr&af == b.addr&af ?? */
 char	*a_ntop_c(addr_t *a);				/* ntop but return static buffer */
 #ifdef HAVE_UINT128
 	int	a_cnth(addr_t *a, __uint128_t n, addr_t *dst);	/* return cidr[n] */

@@ -69,7 +69,7 @@ static inline int __p_ipv6(u_char *out_ip6, const char *txt)
 	}
 	ep=NULL;
 
-	u=(u_short*)&out_ip6;
+	u=(u_short*)(void*)out_ip6;
 	i=j=n=z=-1;
 
 	if (*txt==':')
@@ -249,6 +249,8 @@ int a_pton(addr_t *a, const char *cp)
 		return -1;
 
 	memset(a->block.mask,0,16);
+	memset(a->block.network,0,16);
+	memset(a->block.broadcast,0,16);
 	a->block.bits=-1;
 	a->af=-1;
 	ap=cp;
@@ -619,31 +621,41 @@ int a_cnth(addr_t *a, size_t n, addr_t *dst)
 
 int a_cmp(const addr_t *a, const addr_t *b)
 {
-	int n;
+	u_long n;
 	if (!a||!b)
 		return -1;
-	if ((a->af-b->af)!=0)
+	if ((a->af!=b->af))
 		return -1;
-	if ((a->block.bits-b->block.bits)!=0)
+	if ((a->block.bits!=b->block.bits))
 		return -1;
-	for (n=0;n<16;n++)
-		if ((a->block.mask[n]-b->block.mask[n])!=0)
+	switch (a->af) {
+		case AFIP4:
+			if (memcmp(a->addr.ip4,b->addr.ip4,4)!=0)
+				return -1;
+			if (a->block.bits==-1)
+				return 0;
+			n=4;
+			break;
+		case AFIP6:
+			if (memcmp(a->addr.ip6,b->addr.ip6,16)!=0)
+				return -1;
+			if (a->block.bits==-1)
+				return 0;
+			n=16;
+			break;
+		case AFMAC:
+			if (memcmp(a->addr.mac,b->addr.mac,6)!=0)
+				return -1;
+			return 0;
+		default:
 			return -1;
-	for (n=0;n<16;n++)
-		if ((a->block.network[n]-b->block.network[n])!=0)
-			return -1;
-	for (n=0;n<16;n++)
-		if ((a->block.broadcast[n]-b->block.broadcast[n])!=0)
-			return -1;
-	for (n=0;n<4;n++)
-		if ((a->addr.ip4[n]-b->addr.ip4[n])!=0)
-			return -1;
-	for (n=0;n<16;n++)
-		if ((a->addr.ip6[n]-b->addr.ip6[n])!=0)
-			return -1;
-	for (n=0;n<6;n++)
-		if ((a->addr.mac[n]-b->addr.mac[n])!=0)
-			return -1;
+	}
+	if (memcmp(a->block.mask,b->block.mask,n)!=0)
+		return -1;
+	if (memcmp(a->block.network,b->block.network,n)!=0)
+		return -1;
+	if (memcmp(a->block.broadcast,b->block.broadcast,n)!=0)
+		return -1;
 	return 0;
 }
 

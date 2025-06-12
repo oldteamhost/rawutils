@@ -46,7 +46,7 @@ void str_to_size_t(const char *str, size_t *out,
 u_char *hex_ahtoh(char *txt, size_t *hexlen);
 
 /* chksum */
-u_short	ip4_pseudocheck(const u_int src, const u_int dst,
+u_short	ip4_pseudocheck(const u_char *src, const u_char *dst,
 	u_char proto, u_short len, const void *hstart);
 
 u_short ip6_pseudocheck(u_char *src, u_char *dst, u_char nxt,

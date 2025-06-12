@@ -304,20 +304,25 @@ u_short in_check(u_short *ptr, int nbytes)
 	return ip_check_carry(sum);
 }
 
-u_short ip4_pseudocheck(const u_int src, const u_int dst,
+u_short	ip4_pseudocheck(const u_char *src, const u_char *dst,
 	u_char proto, u_short len, const void *hstart)
 {
 	struct pseudo {
-		u_int	src;
-		u_int	dst;
+		u_char	src[4];
+		u_char	dst[4];
 		u_char	zero;
 		u_char	proto;
 		u_short	length;
 	} hdr;
 	int sum;
 
-	hdr.src=src;
-	hdr.dst=dst;
+	assert(src);
+	assert(dst);
+	assert(hstart);
+	assert(len);
+
+	memcpy(hdr.src,src,4);
+	memcpy(hdr.dst,dst,4);
 	hdr.zero=0;
 	hdr.proto=proto;
 	hdr.length=htons(len);
@@ -348,6 +353,11 @@ u_short ip6_pseudocheck(u_char *src, u_char *dst, u_char nxt,
 		u_char	nxt;
 	} hdr;
 	int sum;
+
+	assert(src);
+	assert(dst);
+	assert(hstart);
+	assert(len);
 
 	memcpy(hdr.src,src,16);
 	memcpy(hdr.dst,dst,16);
