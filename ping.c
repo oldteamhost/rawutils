@@ -29,54 +29,56 @@
 
 struct timeval		_st,_et;	/* total time */
 
-static inline void getopts(int argc, char **argv)
+static inline void getopts(int c, char **av)
 {
 	int opt;
-	if (argc<=1) {
+	if (c<=1) {
 usage:
 		puts("Usage");
-		printf("  %s [-UsLCaeimt] [flags] <target target1 ...,>\n\n",argv[0]);
-		puts("  U           udp ping");
-		puts("  s           tcp syn ping");
-		puts("  a           tcp ack ping");
-		puts("  L           udp-lite ping");
-		puts("  e           icmp echo ping");
-		puts("  i           icmp info ping");
-		puts("  m           icmp mask ping");
-		puts("  t           icmp tstamp ping");
-		puts("  C           sctp cookie ping");
-
-		puts("  N           no reverse DNS name resolution");
+		printf("  %s [-UsLCaeimt] [flags] <target target2 ...,>\n\n",av[0]);
+		puts("  -N           no reverse DNS name resolution");
 
 		/* set interface */
-		puts("  I <device>  set your interface and his info");
+		puts("  -I <device>  set your interface and his info");
 		/* interval */
-		puts("  i <time>    set interval between packets, ex: see down");
+		puts("  -i <time>    set interval between packets, ex: see down");
 		/* timeout */
-		puts("  w <time>    set wait time or timeout, ex: 10s or 10ms");
+		puts("  -w <time>    set wait time or timeout, ex: 10s or 10ms");
 		/* count */
-		puts("  n <count>   set num frames after stop");
+		puts("  -n <count>   set num frames after stop");
 		/* quit on first */
-		puts("  f           quit on first reply");
+		puts("  -f           quit on first reply");
 		/* cisco */
-		puts("  D           display line mode (! reply) (. noreply)");
-		/* methods */
+		puts("  -D           display line mode (! reply) (. noreply)");
+		/* ttl */
+		puts("  -t <ttl>     set your ttl/hop limit (Time To Live)");
 
 		/* payload */
-		puts("  H <hex>     set payload data in hex numbers");
-		puts("  a <ascii>   set payload data in ascii");
-		puts("  l <length>  set random payload data");
+		puts("  -H <hex>     set payload data in hex numbers");
+		puts("  -a <ascii>   set payload data in ascii");
+		puts("  -l <length>  set random payload data");
+		puts("  -h           show this help message and exit");
+		putchar(0x0a);
+		/* methods */
+		puts("  -U  udp ping");
+		puts("  -s  tcp syn ping");
+		puts("  -a  tcp ack ping");
+		puts("  -L  udp-lite ping");
+		puts("  -e  icmp echo ping");
+		puts("  -i  icmp info ping");
+		puts("  -m  icmp mask ping");
+		puts("  -t  icmp tstamp ping");
+		puts("  -C  sctp cookie ping");
 		/* help */
-		puts("  h           show this help message and exit");
 
 		puts("\nExamples");
-		printf("  %s 192.168.1.1 -f -e localhost\n",argv[0]);
-		printf("  %s -G -i 300ms\n",argv[0]);
-		printf("  %s -G -v -n 1000 -i 10ms -0\n",argv[0]);
+		printf("  %s 192.168.1.1 -f -e localhost\n",av[0]);
+		printf("  %s -G -i 300ms\n",av[0]);
+		printf("  %s -G -v -n 1000 -i 10ms -0\n",av[0]);
 		exit(0);
 	}
 
-	while ((opt=getopt(argc,argv,"h"))!=-1) {
+	while ((opt=getopt(c,av,"h"))!=-1) {
 		switch (opt) {
 			case '?': case 'h': default:
 				goto usage;
@@ -92,10 +94,10 @@ static inline noreturn void finish(int sig)
 	exit(0);
 }
 
-int main(int argc, char **argv)
+int main(int c, char **av)
 {
 	signal(SIGINT,finish);
 	gettimeofday(&_st,NULL);
-	getopts(argc,argv);
+	getopts(c,av);
 	return 0;
 }

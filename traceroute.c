@@ -81,8 +81,9 @@ long long		*rtts=NULL;	/* times free() */
 u_char			_6flag=0;
 addr_t			_6opt;
 
-static inline u_char *tracerouteframe(u_int *outlen, addr_t *target,
-	 int proto, u_char *_data, u_int _datalen)
+static inline u_char *
+tracerouteframe(u_int *outlen, addr_t *target, int proto,
+		u_char *_data, u_int _datalen)
 {
 	u_char	*frame;	/* result frame (packet) */
 	int	n,s;	/* counter */
@@ -286,7 +287,8 @@ static inline u_char *tracerouteframe(u_int *outlen, addr_t *target,
 	return frame;
 }
 
-static inline void stats(addr_t *target)
+static inline void
+stats(addr_t *target)
 {
 	char t1[1000],t2[1000],t3[1000];
 	
@@ -309,7 +311,8 @@ static inline void stats(addr_t *target)
 	putchar(0x0a);
 }
 
-static inline noreturn void finish(int sig)
+static inline noreturn void
+finish(int sig)
 {
 	(void)sig;
 	
@@ -339,7 +342,8 @@ static inline noreturn void finish(int sig)
 }
 
 
-static inline void getopts(int argc, char **argv)
+static inline void
+getopts(int argc, char **argv)
 {
 	const char		*ip;
 	int			opt,n;
@@ -351,32 +355,32 @@ static inline void getopts(int argc, char **argv)
 usage:
 		puts("Usage");
 		printf("  %s [options] <targets>\n\n",argv[0]);
-		puts("  I <device>  set your interface and his info");
-		puts("  s <source>  set source custom IP4 address");
-		puts("  6 <source>  set source custom IPV6 address");
-		puts("  n <count>   set your num of try");
-		puts("  S <source>  set source custom MAC address");
-		puts("  o <tos>     set num in Type Of Service/Traffic class");
-		puts("  P <port>    set source (your) port");
-		puts("  m <ttl>     set max ttl/hop limit (num hops)");
-		puts("  i <time>    set interval between packets, ex: see down");
-		puts("  w <time>    set wait time or timeout, ex: 10s or 10ms");
-		puts("  f <ttl>     set first ttl/hop limit (start hop)");
-		puts("  p <port>    set destination port");
-		puts("  H <hex>     set payload data in hex numbers");
-		puts("  a <ascii>   set payload data in ascii");
-		puts("  l <length>  set random payload data");
+		puts("  -I <device>  set your interface and his info");
+		puts("  -s <source>  set source custom IP4 address");
+		puts("  -6 <source>  set source custom IPV6 address");
+		puts("  -n <count>   set your num of try");
+		puts("  -d           set Dont't Fragment flag (ipv4)");
+		puts("  -S <source>  set source custom MAC address");
+		puts("  -o <tos>     set num in Type Of Service/Traffic class");
+		puts("  -P <port>    set source (your) port");
+		puts("  -m <ttl>     set max ttl/hop limit (num hops)");
+		puts("  -i <time>    set interval between packets, ex: see down");
+		puts("  -w <time>    set wait time or timeout, ex: 10s or 10ms");
+		puts("  -f <ttl>     set first ttl/hop limit (start hop)");
+		puts("  -4           set More Fragment flag (ipv4)");
+		puts("  -r           set Reserved Fragment flag (ipv4)");
+		puts("  -p <port>    set destination port");
+		puts("  -H <hex>     set payload data in hex numbers");
+		puts("  -a <ascii>   set payload data in ascii");
+		puts("  -l <length>  set random payload data");
+		puts("  -h           show this help message and exit");
 		putchar(0x0a);
-		puts("  A  use all methods and protos");
-		puts("  E  use only icmp4 echo packets");
-		puts("  Y  use only tcp syn packets");
-		puts("  U  use only udp packets");
-		puts("  L  use only udp-lite packets");
-		puts("  C  use only sctp-cookie packets");
-		puts("  r  set Reserved Fragment flag (ipv4)");
-		puts("  d  set Dont't Fragment flag (ipv4)");
-		puts("  4  set More Fragment flag (ipv4)");
-		puts("  h  show this help message and exit");
+		puts("  -A  use all methods and protos");
+		puts("  -E  use only icmp4 echo packets");
+		puts("  -Y  use only tcp syn packets");
+		puts("  -U  use only udp packets");
+		puts("  -L  use only udp-lite packets");
+		puts("  -C  use only sctp-cookie packets");
 		puts("\nExamples");
 		printf("  %s google.com -A\n",argv[0]);
 		printf("  %s 5.255.255.77 -n 10 -w 50ms\n",argv[0]);
@@ -542,7 +546,8 @@ usage:
 	}
 }
 
-static inline u_char traceroutecallback(u_char *frame, size_t frmlen, void *arg)
+static inline u_char
+traceroutecallback(u_char *frame, size_t frmlen, void *arg)
 {
 	/* arg is target */
 	addr_t *target=(addr_t*)arg;
@@ -576,7 +581,7 @@ static inline u_char traceroutecallback(u_char *frame, size_t frmlen, void *arg)
 			break;
 		case AF_INET6:
 			source.af=AFIP6;
-			if (frmlen<54)	/* eth ipv6 icmp */
+			if (frmlen<54)	/* eth + ipv6 + icmp6 */
 				return 0;
 			/* only ip6 frames */
 			if (ntohs(*(u_short*)(void*)(frame+12))!=0x86dd)
@@ -607,7 +612,8 @@ static inline u_char traceroutecallback(u_char *frame, size_t frmlen, void *arg)
 	return 1;
 }
 
-static inline const char *resolve_dns(addr_t *t)
+static inline const char *
+resolve_dns(addr_t *t)
 {
 	static char res[2048+2];
 	struct sockaddr_in6 sa6;
@@ -643,7 +649,8 @@ static inline const char *resolve_dns(addr_t *t)
 	return "(\?\?\?)";
 }
 
-static inline int importcidr(cidr_block_t *c)
+static inline int
+importcidr(cidr_block_t *c)
 {
 	addr_t host;
 	size_t n;
@@ -666,7 +673,8 @@ static inline int importcidr(cidr_block_t *c)
 	return 1;
 }
 
-static inline long long tvrtt(struct timeval *s, struct timeval *e)
+static inline long long
+tvrtt(struct timeval *s, struct timeval *e)
 {
 	long long sec,usec,rtt;
 
@@ -682,14 +690,15 @@ static inline long long tvrtt(struct timeval *s, struct timeval *e)
 	rtt=(long long)sec*1000000000LL+
 		(long long)usec*1000LL;
 
-	tsum+=rtt;	/* update stats */
+	tsum+=rtt; /* update stats */
 	tmax=(rtt>tmax)?rtt:tmax;
 	tmin=(rtt<tmin)?rtt:tmin;
 
 	return rtt;
 }
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
 	struct sockaddr_ll		sll={0};
 	u_char				*frame=NULL;
@@ -832,7 +841,7 @@ print:
 			stats(it),++printstats;
 	}
 
-	/* cidr ?? */
+	/* cidr not empty ? */
 	cvector_clear(targets);
 	if ((importcidr(&block[0]))!=0)
 		goto try;
