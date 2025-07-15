@@ -96,7 +96,7 @@ resolve_ipv4(const char *hostname)
 	struct sockaddr_in	*addr,sa_in;
 
 	bzero(ip,sizeof(ip));
-	bzero(hints,sizeof(hints));
+	bzero(&hints,sizeof(hints));
 	hints.ai_family=AF_INET;
 
 	if (getaddrinfo(hostname,NULL,&hints,&res)==0) {
