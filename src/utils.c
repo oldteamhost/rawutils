@@ -24,10 +24,11 @@
 
 #include "../include/utils.h"
 
-const char *timediff(struct timeval *s, struct timeval *e,
+const char *
+timediff(struct timeval *s, struct timeval *e,
 		char *out, size_t outlen)
 {
-	long long st,mc;
+	long long st,mc,ns;
 
 	st=e->tv_sec-s->tv_sec;
 	mc=e->tv_usec-s->tv_usec;
@@ -37,16 +38,17 @@ const char *timediff(struct timeval *s, struct timeval *e,
 		mc+=1000000;
 	}
 
-	long long ns=st*1000000000LL+mc*1000LL;
+	ns=st*1000000000LL+mc*1000LL;
 	return timefmt(ns,out,outlen);
 }
 
-const char *timefmt(long long ns, char *out, size_t outlen)
+const char *
+timefmt(long long ns, char *out, size_t outlen)
 {
-	const char *prefixes[]={
-		"ns","μs","ms","sec","min","h"};
-	double val;
-	int prfx;
+	const char *prefixes[]={"ns","μs","ms",
+			"sec","min","h"};
+	double	val;
+	int	prfx;
 
 	val=(double)ns;
 	prfx=0;
@@ -54,34 +56,30 @@ const char *timefmt(long long ns, char *out, size_t outlen)
 	if (val>=3600000000000.0) {
 		prfx=5;
 		val/=3600000000000.0;
-	}
-	else if (val>=60000000000.0) {
+	} else if (val>=60000000000.0) {
 		prfx=4;
 		val/=60000000000.0;
-	}
-	else if (val>=1000000000.0) {
+	} else if (val>=1000000000.0) {
 		prfx=3;
 		val/=1000000000.0;
-	}
-	else if (val>=1000000.0) {
+	} else if (val>=1000000.0) {
 		prfx=2;
 		val/=1000000.0;
-	}
-	else if (val>=1000.0) {
+	} else if (val>=1000.0) {
 		prfx=1;
 		val/=1000.0;
-	}
-	else
+	} else
 		prfx=0;
 
 	snprintf(out,outlen,"%.2f %s",val,prefixes[prfx]);
 	return out;
 }
 
-const char *strdate(char *out, size_t outlen)
+const char *
+strdate(char *out, size_t outlen)
 {
-	struct tm *t=NULL;
-	time_t now=0;
+	struct tm	*t;
+	time_t		now;
 
 	now=time(NULL);
 	t=localtime(&now);
@@ -90,19 +88,21 @@ const char *strdate(char *out, size_t outlen)
 	return out;
 }
 
-char *resolve_ipv4(const char *hostname)
+char *
+resolve_ipv4(const char *hostname)
 {
-	static char ip[INET_ADDRSTRLEN];
-	struct addrinfo hints={0},*res;
-	struct sockaddr_in *addr,sa_in;
+	static char		ip[INET_ADDRSTRLEN];
+	struct addrinfo		hints,*res;
+	struct sockaddr_in	*addr,sa_in;
 
-	memset(ip,0,sizeof(ip));
+	bzero(ip,sizeof(ip));
+	bzero(hints,sizeof(hints));
 	hints.ai_family=AF_INET;
 
-	if (getaddrinfo(hostname, NULL, &hints, &res)==0) {
+	if (getaddrinfo(hostname,NULL,&hints,&res)==0) {
 		memcpy(&sa_in,res->ai_addr,sizeof(sa_in));
 		addr=&sa_in;
-		inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip));
+		inet_ntop(AF_INET,&addr->sin_addr,ip,sizeof(ip));
 		freeaddrinfo(res);
 		return ip;
 	}
@@ -110,20 +110,24 @@ char *resolve_ipv4(const char *hostname)
 	return NULL;
 }
 
-void nsdelay(long long ns)
+void
+nsdelay(long long ns)
 {
-	struct timespec req, rem;
+	struct timespec	req,rem;
+
 	req.tv_sec=(ns/1000000000);
 	req.tv_nsec=(ns%1000000000);
-	nanosleep(&req, &rem);
+
+	nanosleep(&req,&rem);
 }
 
-long long delayconv(const char *txt)
+long long
+delayconv(const char *txt)
 {
-	char unit[3]={0};
-	long long res;
-	char* endptr;
-	size_t len;
+	char		unit[3]={0};
+	long long	res;
+	char		*endptr;
+	size_t		len;
 
 	if(txt==NULL||*txt=='\0')
 		return -1;
@@ -154,30 +158,39 @@ long long delayconv(const char *txt)
 	return -1;
 }
 
-static inline struct timeval timevalns(long long ns)
+static inline struct timeval
+timevalns(long long ns)
 {
 	struct timeval tv;
+
 	tv.tv_sec=ns/1000000000LL;
 	tv.tv_usec=(ns%1000000000LL)/1000;
+
 	return tv;
 }
 
-ssize_t frmrecv(int fd, u_char **buf, size_t buflen,
-                void *arg, rcall_t callback,
-                struct timeval *tstamp_s,
-                struct timeval *tstamp_e,
+ssize_t
+frmrecv(int fd, u_char **buf, size_t buflen,void *arg, rcall_t callback,
+                struct timeval *tstamp_s,struct timeval *tstamp_e,
 		long long ns)
 {
-	struct timespec s={0},c={0};
-	struct timeval timeout={0};
-	struct pollfd pfd={0};
-	u_char *tmpbuf=NULL;
-	ssize_t ret=0;
+	struct timespec	s,c;
+	struct timeval	timeout;
+	struct pollfd	pfd;
+	u_char		*tmpbuf;
+	ssize_t		ret;
 
 	assert(buf);
 	assert(callback);
 	assert(fd>=0);
 	assert(buflen>0);
+
+	ret=0;
+	tmpbuf=NULL;
+	bzero(&s,sizeof(s));
+	bzero(&c,sizeof(c));
+	bzero(&timeout,sizeof(timeout));
+	bzero(&pfd,sizeof(pfd));
 	
 	pfd.fd=fd;
 	pfd.events=POLLIN;
@@ -222,10 +235,11 @@ ssize_t frmrecv(int fd, u_char **buf, size_t buflen,
 	}
 }
 
-void str_to_size_t(const char *str, size_t *out, size_t min, size_t max)
+void
+str_to_size_t(const char *str, size_t *out, size_t min, size_t max)
 {
-	unsigned long long val;
-	char *endptr;
+	unsigned long long	val;
+	char			*endptr;
 
 	assert(str||*str||out);
 	while (isspace((u_char)*str))
@@ -249,10 +263,11 @@ void str_to_size_t(const char *str, size_t *out, size_t min, size_t max)
 #define ip_check_carry(x) \
 	(x=(x>>16)+(x&0xffff),(~(x+(x>>16))&0xffff))
 
-static int ip_check_add(const void *buf, size_t len, int check)
+static inline int
+ip_check_add(const void *buf, size_t len, int check)
 {
-	u_short *sp=(u_short*)buf;
-	size_t n,sn;
+	u_short	*sp=(u_short*)buf;
+	size_t	n,sn;
 
 	sn=len/2;
 	n=(sn+15)/16;
@@ -297,15 +312,17 @@ static int ip_check_add(const void *buf, size_t len, int check)
 	return check;
 }
 
-u_short in_check(u_short *ptr, int nbytes)
+u_short
+in_check(u_short *ptr, int nbytes)
 {
 	int sum;
 	sum=ip_check_add(ptr,(size_t)nbytes,0);
 	return ip_check_carry(sum);
 }
 
-u_short	ip4_pseudocheck(const u_char *src, const u_char *dst,
-	u_char proto, u_short len, const void *hstart)
+u_short
+ip4_pseudocheck(const u_char *src, const u_char *dst,
+		u_char proto, u_short len, const void *hstart)
 {
 	struct pseudo {
 		u_char	src[4];
@@ -341,11 +358,11 @@ u_short	ip4_pseudocheck(const u_char *src, const u_char *dst,
 	return (u_short)sum;
 }
 
-u_short ip6_pseudocheck(u_char *src, u_char *dst, u_char nxt,
-	 u_int len, const void *hstart)
+u_short
+ip6_pseudocheck(u_char *src, u_char *dst, u_char nxt,
+		 u_int len, const void *hstart)
 {
-	struct pseudo
-	{
+	struct pseudo {
 		u_char	src[16];
 		u_char	dst[16];
 		u_int	length;
@@ -420,10 +437,11 @@ u_short ip6_pseudocheck(u_char *src, u_char *dst, u_char nxt,
   } while (0)
 #endif
 
-u_int adler32(u_int adler, const u_char *buf, size_t len)
+u_int
+adler32(u_int adler, const u_char *buf, size_t len)
 {
-	unsigned long sum2;
-	u_int n;
+	unsigned long	sum2;
+	u_int		n;
 
 	sum2=(adler>>16)&0xffff;
 	adler&=0xffff;
@@ -481,14 +499,15 @@ u_int adler32(u_int adler, const u_char *buf, size_t len)
 }
 
 /* thanks nmap */
-u_char *hex_ahtoh(char *txt, size_t *hexlen)
+u_char *
+hex_ahtoh(char *txt, size_t *hexlen)
 {
-	static u_char dst[16384];
-	size_t dstlen=16384;
-	char auxbuff[1024];
-	char *start=NULL;
-	char twobytes[3];
-	u_int i=0, j=0;
+	static u_char	dst[16384];
+	size_t		dstlen=16384;
+	char		auxbuff[1024];
+	char		*start=NULL;
+	char		twobytes[3];
+	u_int		i=0,j=0;
 
 	if (!txt||!hexlen)
 		return NULL;

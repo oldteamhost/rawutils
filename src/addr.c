@@ -24,7 +24,8 @@
 
 #include "../include/addr.h"
 
-static inline int __p_ipv4(u_char *out_ip, const char *txt)
+static inline int
+__p_ipv4(u_char *out_ip, const char *txt)
 {
 	char	*ep;
 	long	n;
@@ -50,7 +51,8 @@ static inline int __p_ipv4(u_char *out_ip, const char *txt)
 	return ((j==4&&*ep=='\0')?0:-1);
 }
 
-static inline int __p_ipv6(u_char *out_ip6, const char *txt)
+static inline int
+__p_ipv6(u_char *out_ip6, const char *txt)
 {
 	u_short	data[8];
 	u_short	*u;
@@ -116,7 +118,8 @@ static inline int __p_ipv6(u_char *out_ip6, const char *txt)
 	return 0;
 }
 
-static inline int __p_mac(u_char *out_mac, const char *txt)
+static inline int
+__p_mac(u_char *out_mac, const char *txt)
 {
 	char	*ep;
 	char	s;
@@ -155,7 +158,8 @@ static inline int __p_mac(u_char *out_mac, const char *txt)
 	return ((j==6&&*ep=='\0')?0:-1);
 }
 
-static inline int __broadcast(addr_t *a)
+static inline int
+__broadcast(addr_t *a)
 {
 	int i,j;
 	if (!a||a->block.bits==-1)
@@ -183,7 +187,8 @@ static inline int __broadcast(addr_t *a)
 	return 0;
 }
 
-static inline int __network(addr_t *a)
+static inline int
+__network(addr_t *a)
 {
 	int i,j;
 	if (!a||a->block.bits==-1)
@@ -209,7 +214,8 @@ static inline int __network(addr_t *a)
 	return 0;
 }
 
-static inline int __btom(addr_t *a)
+static inline int
+__btom(addr_t *a)
 {
 	u_char *ptr;
 	u_int mtmp;
@@ -240,7 +246,8 @@ static inline int __btom(addr_t *a)
 	return 0;
 }
 
-int a_pton(addr_t *a, const char *cp)
+int
+a_pton(addr_t *a, const char *cp)
 {
 	char		p1[256];
 	const char	*sp,*ap;
@@ -334,7 +341,8 @@ static const char *octet2hex[]={
 	"fd","fe","ff"
 };
 
-static inline int __n_mac(u_char *mac, char *dst, size_t dstlen)
+static inline int
+__n_mac(u_char *mac, char *dst, size_t dstlen)
 {
 	const char	*x;
 	char		*ptr;
@@ -383,7 +391,8 @@ static const char *octet2dec[]={
 	"254","255"
 };
 
-static inline int __n_ipv4(u_char *ipv4, char *dst, size_t dstlen)
+static inline int
+__n_ipv4(u_char *ipv4, char *dst, size_t dstlen)
 {
 	const char	*d;
 	char		*ptr;
@@ -403,7 +412,8 @@ static inline int __n_ipv4(u_char *ipv4, char *dst, size_t dstlen)
 }
 
 /* libdnet */
-static inline int __n_ipv6(u_char *ipv6, char *dst, size_t dstlen)
+static inline int
+__n_ipv6(u_char *ipv6, char *dst, size_t dstlen)
 {
 	struct {int base,len;}	best,cur;
 	u_short			*ip6_data;
@@ -469,7 +479,8 @@ static inline int __n_ipv6(u_char *ipv6, char *dst, size_t dstlen)
 	return 0;
 }
 
-int a_ntop(addr_t *a, char *dst, size_t dstlen)
+int
+a_ntop(addr_t *a, char *dst, size_t dstlen)
 {
 	char buffer[2048],bits[64];
 
@@ -506,7 +517,8 @@ int a_ntop(addr_t *a, char *dst, size_t dstlen)
 	return 0;
 }
 
-char *a_ntop_c(addr_t *a)
+char *
+a_ntop_c(addr_t *a)
 {
 	static char temp[65535];
 	if (!a)
@@ -517,7 +529,8 @@ char *a_ntop_c(addr_t *a)
 }
 
 #ifdef HAVE_UINT128
-int a_cnth(addr_t *a, __uint128_t n, addr_t *dst)
+int
+a_cnth(addr_t *a, __uint128_t n, addr_t *dst)
 {
 	__uint128_t n6=0,max;
 	u_int n4;
@@ -564,7 +577,8 @@ int a_cnth(addr_t *a, __uint128_t n, addr_t *dst)
 	return 0;
 }
 #else
-int a_cnth(addr_t *a, size_t n, addr_t *dst)
+int
+a_cnth(addr_t *a, size_t n, addr_t *dst)
 {
 	u_char	n6[16];
 	u_short	val;
@@ -619,7 +633,8 @@ int a_cnth(addr_t *a, size_t n, addr_t *dst)
 }
 #endif
 
-int a_cmp(const addr_t *a, const addr_t *b)
+int
+a_cmp(const addr_t *a, const addr_t *b)
 {
 	u_long n;
 	if (!a||!b)
@@ -659,7 +674,8 @@ int a_cmp(const addr_t *a, const addr_t *b)
 	return 0;
 }
 
-int a_bcast(const addr_t *a, addr_t *b)
+int
+a_bcast(const addr_t *a, addr_t *b)
 {
 	if (!a||!b||a->block.bits==-1)
 		return -1;
@@ -678,7 +694,8 @@ int a_bcast(const addr_t *a, addr_t *b)
 	return 0;
 }
 
-int a_net(const addr_t *a, addr_t *b)
+int
+a_net(const addr_t *a, addr_t *b)
 {
 	if (!a||!b||a->block.bits==-1)
 		return -1;
@@ -697,7 +714,8 @@ int a_net(const addr_t *a, addr_t *b)
 	return 0;
 }
 
-int a_mask(const addr_t *a, addr_t *b)
+int
+a_mask(const addr_t *a, addr_t *b)
 {
 	if (!a||!b||a->block.bits==-1)
 		return -1;

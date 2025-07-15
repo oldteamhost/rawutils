@@ -27,20 +27,23 @@
 void	(*SRANDOM)(u_long);
 u_long	(*RANDOM)(void);
 
-void Srandom(u_long seed)
+void
+Srandom(u_long seed)
 {
 	assert(SRANDOM);
 	SRANDOM(seed);
 }
 
-u_long Random(void)
+u_long
+Random(void)
 {
 	assert(RANDOM);
 	return RANDOM();
 }
 
 
-void random_set(int id)
+void
+random_set(int id)
 {
 	switch (id) {
 		case 1:
@@ -63,7 +66,8 @@ void random_set(int id)
 	}
 }
 
-u_long randnum(u_long min, u_long max)
+u_long
+randnum(u_long min, u_long max)
 {
 	assert(RANDOM);
 	if (min>max)
@@ -73,22 +77,26 @@ u_long randnum(u_long min, u_long max)
 	return min+(RANDOM()%(max-min+1UL));
 }
 
-u_int random_u32(void)
+u_int
+random_u32(void)
 {
 	return (u_int)randnum(0,UINT_MAX);
 }
 
-u_short random_u16(void)
+u_short
+random_u16(void)
 {
 	return (u_short)randnum(0,USHRT_MAX);
 }
 
-u_char random_u8(void)
+u_char
+random_u8(void)
 {
 	return (u_char)randnum(0,UCHAR_MAX);
 }
 
-u_int random_ipv4(void)
+u_int
+random_ipv4(void)
 {
 	u_int res;
 
@@ -101,7 +109,8 @@ u_int random_ipv4(void)
 
 static u_long Q[4096], c=362436;
 
-u_long cmwc(void)
+u_long
+cmwc(void)
 {
 	u_long x, r=0xfffffffe;
 	u_long t, a=18782LL;
@@ -120,7 +129,8 @@ u_long cmwc(void)
 	return (Q[i]=r-x);
 }
 
-void cmwc_seed(u_long seed)
+void
+cmwc_seed(u_long seed)
 {
 	u_int i;
 	Q[0]=seed;
@@ -132,7 +142,8 @@ void cmwc_seed(u_long seed)
 
 static u_long s[2] = {1, 2};
 
-u_long xoroshiro128plus(void)
+u_long
+xoroshiro128plus(void)
 {
 	u_long s0=s[0];
 	u_long s1=s[1];
@@ -146,7 +157,8 @@ u_long xoroshiro128plus(void)
 	return res;
 }
 
-void xoroshiro128plus_seed(u_long seed)
+void
+xoroshiro128plus_seed(u_long seed)
 {
 	s[0]=seed;
 	/* golden ratio */
@@ -156,12 +168,14 @@ void xoroshiro128plus_seed(u_long seed)
 
 static u_long splitmix64_state;
 
-void splitmix64_seed(u_long seed)
+void
+splitmix64_seed(u_long seed)
 {
 	splitmix64_state=(u_long)seed;
 }
 
-u_long splitmix64(void)
+u_long
+splitmix64(void)
 {
 	u_long z=(splitmix64_state+=0x9e3779b97f4a7c15ULL);
 	z=(z^(z>>30))*0xbf58476d1ce4e5b9ULL;
@@ -172,13 +186,15 @@ u_long splitmix64(void)
 
 static u_long romu_x, romu_y;
 
-void romuduojr_seed(u_long seed)
+void
+romuduojr_seed(u_long seed)
 {
 	romu_x=seed^0xA5A5A5A5A5A5A5A5UL;
 	romu_y=seed*0x5851F42D4C957F2DUL+1;
 }
 
-u_long romuduojr(void)
+u_long
+romuduojr(void)
 {
 	u_long xp=romu_x;
 	romu_x=15241094284759029579u*romu_y;
@@ -187,7 +203,8 @@ u_long romuduojr(void)
 	return xp;
 }
 
-u_long random_seed_u64(void)
+u_long
+random_seed_u64(void)
 {
 	struct timespec ts;
 	if (clock_gettime(CLOCK_MONOTONIC, &ts)!=0)
@@ -195,7 +212,8 @@ u_long random_seed_u64(void)
 	return ((u_long)(ts.tv_sec*1000000000L+ts.tv_nsec));
 }
 
-char *random_str(size_t len, const char *dictionary)
+char *
+random_str(size_t len, const char *dictionary)
 {
 	size_t dict_len,i;
 	char *result=NULL;

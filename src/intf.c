@@ -24,11 +24,12 @@
 
 #include "../include/intf.h"
 
-static inline int __intf_ipv6_src_get(intf_t *i, const char *ifname)
+static inline int
+__intf_ipv6_src_get(intf_t *i, const char *ifname)
 {
-	u_int index,prefix_len,scope,flags;
-	char dev[256],addr[512],s[8][5];
-	FILE *f;
+	u_int	index,prefix_len,scope,flags;
+	char	dev[256],addr[512],s[8][5];
+	FILE	*f;
 
 	if (!(f=fopen("/proc/net/if_inet6","r"))) {
 		errx(1,"failed open /proc/net/if_inet6 for get srcip6"
@@ -54,11 +55,12 @@ static inline int __intf_ipv6_src_get(intf_t *i, const char *ifname)
 	return 0;
 }
 
-static inline void __intf_base_get(intf_t *i, const char *ifname)
+static inline void
+__intf_base_get(intf_t *i, const char *ifname)
 {
-	struct ifreq ifr;
-	int fd,n1;
-	u_int n;
+	struct ifreq	ifr;
+	int		fd,n1;
+	u_int		n;
 
 	assert(ifname);
 	assert(i);
@@ -105,13 +107,14 @@ static inline void __intf_base_get(intf_t *i, const char *ifname)
 	assert((size_t)n1<sizeof(i->name));
 }
 
-static inline void __intf_gatewayip4_get(intf_t *i, const char *ifname)
+static inline void
+__intf_gatewayip4_get(intf_t *i, const char *ifname)
 {
-	char dev[IFNAMSIZ];
-	u_long dest,gate;
-	char line[1024];
-	u_char okflag;
-	FILE *f;
+	char	dev[IFNAMSIZ];
+	u_long	dest,gate;
+	char	line[1024];
+	u_char	okflag;
+	FILE	*f;
 
 	assert(ifname);
 	assert(i);
@@ -145,15 +148,16 @@ static inline void __intf_gatewayip4_get(intf_t *i, const char *ifname)
 }
 
 /* solum after get gatewayip4 */
-static inline void __intf_dstmac_get(intf_t *i, const char *ifname)
+static inline void
+__intf_dstmac_get(intf_t *i, const char *ifname)
 {
-	char ip[32],hw_type[32];
-	char flags[32],mac[32];
-	char dev[IFNAMSIZ+1];
-	char line[1024];
-	u_char okflag;
-	char mask[32];
-	FILE *f;
+	char	ip[32],hw_type[32];
+	char	flags[32],mac[32];
+	char	dev[IFNAMSIZ+1];
+	char	line[1024];
+	u_char	okflag;
+	char	mask[32];
+	FILE	*f;
 
 	assert(ifname);
 	assert(i);
@@ -166,17 +170,18 @@ static inline void __intf_dstmac_get(intf_t *i, const char *ifname)
 		errx(1,"failed get line /proc/net/arp for get dstmac"
 			" for %s interface",ifname);
 	while (fgets(line,sizeof(line),f)) {
+		struct ether_addr	*tmp1;
+		struct in_addr		tmp;
+
 		if (sscanf(line,"%31s %31s %31s %31s %31s %16s",
 				ip,hw_type,flags,mac,mask,dev)!=6)
 			continue;
 		if (strcmp(dev,ifname))
 			continue;
-		struct in_addr tmp;
 		memset(&tmp,0,sizeof(tmp));
 		memcpy(&tmp.s_addr,i->gatewayip4,4);
 		if (strcmp(ip,inet_ntoa(tmp)))
 			continue;
-		struct ether_addr *tmp1;
 		if (!(tmp1=ether_aton(mac)))
 			errx(1,"failed convert mac for get dstmac"
 				" for %s interface",ifname);
@@ -189,7 +194,8 @@ static inline void __intf_dstmac_get(intf_t *i, const char *ifname)
 		errx(1,"failed get dstmac for %s interface",ifname);
 }
 
-int intf_is_network_sendable(intf_t *i)
+int
+intf_is_network_sendable(intf_t *i)
 {
 	assert(i);
 	assert(i->flags!=0);
@@ -212,7 +218,8 @@ int intf_is_network_sendable(intf_t *i)
 	return 1;
 }
 
-static inline int __intf_need_dstmac(intf_t *i)
+static inline int
+__intf_need_dstmac(intf_t *i)
 {
 	assert(i);
 	assert(i->flags!=0);
@@ -225,7 +232,8 @@ static inline int __intf_need_dstmac(intf_t *i)
 	return 1;
 }
 
-void intfget(intf_t *i, const char *ifname)
+void
+intfget(intf_t *i, const char *ifname)
 {
 	__intf_base_get(i,ifname);
 
@@ -236,11 +244,13 @@ void intfget(intf_t *i, const char *ifname)
 	}
 }
 
-void intfget_any(intf_t *i)
+void
+intfget_any(intf_t *i)
 {
-	struct if_nameindex *ifni=NULL,*start=NULL;
-	u_char foundflag;
+	struct if_nameindex	*ifni,*start;
+	u_char			foundflag;
 
+	ifni=start=NULL;
 	if (!(ifni=if_nameindex()))
 		 err(1,"failed get list interfaces");
 

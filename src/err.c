@@ -24,7 +24,8 @@
 
 #include "../include/err.h"
 
-noreturn void err(int eval, const char *fmt, ...)
+noreturn void
+err(int eval, const char *fmt, ...)
 {
 	va_list ap;
 
@@ -39,7 +40,8 @@ noreturn void err(int eval, const char *fmt, ...)
 	exit(eval);
 }
 
-void warn(const char *fmt, ...)
+void
+warn(const char *fmt, ...)
 {
 	va_list ap;
 
@@ -53,7 +55,8 @@ void warn(const char *fmt, ...)
 	(void)fprintf(stderr,"%s\n",strerror(errno));
 }
 
-noreturn void errx(int eval, const char *fmt, ...)
+noreturn void
+errx(int eval, const char *fmt, ...)
 {
 	va_list ap;
 
@@ -68,7 +71,8 @@ noreturn void errx(int eval, const char *fmt, ...)
 	exit(eval);
 }
 
-void warnx(const char *fmt, ...)
+void
+warnx(const char *fmt, ...)
 {
 	va_list ap;
 
