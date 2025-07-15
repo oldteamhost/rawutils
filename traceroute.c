@@ -419,11 +419,11 @@ usage:
 				/* check in main() */
 				break;
 			case 'f':
-				str_to_size_t(optarg,&numtmp,1,USHRT_MAX);
+				str_to_size_t(optarg,&numtmp,1,UCHAR_MAX);
 				ttl=(int)numtmp;
 				break;
 			case 'm':
-				str_to_size_t(optarg,&numtmp,1,USHRT_MAX);
+				str_to_size_t(optarg,&numtmp,1,UCHAR_MAX);
 				mttl=(int)numtmp;
 				break;
 			case 'd':
