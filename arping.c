@@ -73,6 +73,8 @@ u_char			Gflag=0;
 size_t			nbroadcast=0;	/* count broadcast frames */
 size_t			nloss=0;	/* count loss frames */
 
+char usage[]="";
+
 static inline void
 stats(addr_t *target)
 {
@@ -168,31 +170,31 @@ getopts(int c, char **av)
 	int		opt,n;
 
 	if (c<=1) {
-usage:
-		puts("Usage");
+L0:
+		puts("USAGE");
 		printf("  %s [options] <targets>\n\n",av[0]);
-		puts("  -I <device>  set your interface and his info");
-		puts("  -n <count>   set how many packets to send");
-		puts("  -N <count>   set how many packets to recv (replies)");
-		puts("  -o <num>     set your num operation, advice 1-4");
-		puts("  -i <time>    set interval between packets, ex: see down");
-		puts("  -S <source>  set source custom MAC address");
-		puts("  -w <time>    set wait time or timeout, ex: 10s or 10ms");
-		puts("  -t <mac>     set obviously target mac");
-		puts("  -s <source>  set source custom IP address");
-		putchar(0x0a);
-		puts("  -b  keep on broadcasting, do not unicast");
-		puts("  -f  quit on first reply");
-		puts("  -0  use IP address 0.0.0.0 in spa");
-		puts("  -B  use IP address 255.255.255.255 how target");
-		puts("  -l  not display message for loss frames");
-		puts("  -L  not display stats for down target");
-		puts("  -G  use specified interface's _gateway as target");
-		puts("  -D  display line mode (! reply) (. noreply)");
-		puts("  -e  display info in easy (wireshark) style");
-		puts("  -v  display all info, very verbose");
-		puts("  -h  show this help message and exit");
-		puts("\nExamples");
+		puts("OPTIONS");
+		puts("  -I <device>\tset your interface and his info");
+		puts("  -n <count>\tset how many packets to send");
+		puts("  -N <count>\tset how many packets to recv (replies)");
+		puts("  -o <num>\tset your num operation, advice 1-4");
+		puts("  -i <time>\tset interval between packets, ex: see down");
+		puts("  -S <source>\tset source custom MAC address");
+		puts("  -w <time>\tset wait time or timeout, ex: 10s or 10ms");
+		puts("  -t <mac>\tset obviously target mac");
+		puts("  -s <source>\tset source custom IP address");
+		puts("  -b\t\tkeep on broadcasting, do not unicast");
+		puts("  -f\t\tquit on first reply");
+		puts("  -0\t\tuse IP address 0.0.0.0 in spa");
+		puts("  -B\t\tuse IP address 255.255.255.255 how target");
+		puts("  -l\t\tnot display message for loss frames");
+		puts("  -L\t\tnot display stats for down target");
+		puts("  -G\t\tuse specified interface's _gateway as target");
+		puts("  -D\t\tdisplay line mode (! reply) (. noreply)");
+		puts("  -e\t\tdisplay info in easy (wireshark) style");
+		puts("  -v\t\tdisplay all info, very verbose");
+		puts("  -h\t\tshow this help message and exit");
+		puts("\nEXAMPLES");
 		printf("  %s 192.168.1.1 -f -e localhost\n",av[0]);
 		printf("  %s -G -i 300ms\n",av[0]);
 		printf("  %s -G -v -n 1000 -i 10ms -0\n",av[0]);
@@ -286,7 +288,7 @@ usage:
 				++fflag;
 				break;
 			case '?': case 'h': default:
-				goto usage;
+				goto L0;
 		}
 	}
 	if (Bflag) {
@@ -302,7 +304,7 @@ usage:
 	} else {
 		n=c-optind;
 		if (n<=0)
-			goto usage;
+			goto L0;
 
 		block.cur=0;
 		block.curpos=0;

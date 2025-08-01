@@ -353,35 +353,35 @@ getopts(int argc, char **argv)
 
 	if (argc<=1) {
 usage:
-		puts("Usage");
+		puts("USAGE");
 		printf("  %s [options] <targets>\n\n",argv[0]);
-		puts("  -I <device>  set your interface and his info");
-		puts("  -s <source>  set source custom IP4 address");
-		puts("  -6 <source>  set source custom IPV6 address");
-		puts("  -n <count>   set your num of try");
-		puts("  -d           set Dont't Fragment flag (ipv4)");
-		puts("  -S <source>  set source custom MAC address");
-		puts("  -o <tos>     set num in Type Of Service/Traffic class");
-		puts("  -P <port>    set source (your) port");
-		puts("  -m <ttl>     set max ttl/hop limit (num hops)");
-		puts("  -i <time>    set interval between packets, ex: see down");
-		puts("  -w <time>    set wait time or timeout, ex: 10s or 10ms");
-		puts("  -f <ttl>     set first ttl/hop limit (start hop)");
-		puts("  -4           set More Fragment flag (ipv4)");
-		puts("  -r           set Reserved Fragment flag (ipv4)");
-		puts("  -p <port>    set destination port");
-		puts("  -H <hex>     set payload data in hex numbers");
-		puts("  -a <ascii>   set payload data in ascii");
-		puts("  -l <length>  set random payload data");
-		puts("  -h           show this help message and exit");
-		putchar(0x0a);
-		puts("  -A  use all methods and protos");
-		puts("  -E  use only icmp4 echo packets");
-		puts("  -Y  use only tcp syn packets");
-		puts("  -U  use only udp packets");
-		puts("  -L  use only udp-lite packets");
-		puts("  -C  use only sctp-cookie packets");
-		puts("\nExamples");
+		puts("OPTIONS");
+		puts("  -I <device>\tset your interface and his info");
+		puts("  -s <source>\tset source custom IP4 address");
+		puts("  -6 <source>\tset source custom IPV6 address");
+		puts("  -n <count>\tset your num of try");
+		puts("  -d\t\tset Dont't Fragment flag (ipv4)");
+		puts("  -S <source>\tset source custom MAC address");
+		puts("  -o <tos>\tset num in Type Of Service/Traffic class");
+		puts("  -P <port>\tset source (your) port");
+		puts("  -m <ttl>\tset max ttl/hop limit (num hops)");
+		puts("  -i <time>\tset interval between packets, ex: see down");
+		puts("  -w <time>\tset wait time or timeout, ex: 10s or 10ms");
+		puts("  -f <ttl>\tset first ttl/hop limit (start hop)");
+		puts("  -4\t\tset More Fragment flag (ipv4)");
+		puts("  -r\t\tset Reserved Fragment flag (ipv4)");
+		puts("  -p <port>\tset destination port");
+		puts("  -H <hex>\tset payload data in hex numbers");
+		puts("  -a <ascii>\tset payload data in ascii");
+		puts("  -l <length>\tset random payload data");
+		puts("  -h\t\tshow this help message and exit");
+		puts("  -A\t\tuse all methods and protos");
+		puts("  -E\t\tuse only icmp4 echo packets");
+		puts("  -Y\t\tuse only tcp syn packets");
+		puts("  -U\t\tuse only udp packets");
+		puts("  -L\t\tuse only udp-lite packets");
+		puts("  -C\t\tuse only sctp-cookie packets");
+		puts("\nEXAMPLES");
 		printf("  %s google.com -A\n",argv[0]);
 		printf("  %s 5.255.255.77 -n 10 -w 50ms\n",argv[0]);
 		printf("  %s github.com 5.255.255.77 -n 10 -A\n",argv[0]);
@@ -705,7 +705,7 @@ main(int argc, char **argv)
 	u_int				len=0;
 	cvector_iterator(addr_t)	it=NULL;
 	size_t				hopid=1,j=0;
-	u_char				ok=0,p=0;
+	u_char				p=0;
 	addr_t				tmpip;
 	u_char				success=0;
 	char				time[1000];
@@ -769,7 +769,7 @@ try:
 			memset(rtts,0,(try*sizeof(long long)));
 			p=success=0;
 			printf("%d  ", ttl),fflush(stdout);
-			for (hopid=1,ok=0;hopid<=try;hopid++) {
+			for (hopid=1;hopid<=try;hopid++) {
 				nsdelay(interval);	/* delay ? */
 				if (!(frame=tracerouteframe(&len,it,method,
 						(u_char*)data,(u_int)datalen)))	/* create frame */
